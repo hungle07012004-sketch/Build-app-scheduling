@@ -1,0 +1,38 @@
+import {test,expect} from '@playwright/test';
+
+test('Automatic budget preview matches real V5 execution and shows relevant settings',async({page,request})=>{
+  await page.goto('/');await page.locator('input[type=password]').fill('planner-demo');
+  await page.getByRole('button',{name:'Sign In',exact:true}).click();
+  await expect(page.getByRole('heading',{name:'Production Dashboard'})).toBeVisible();
+  await page.getByRole('button',{name:'Jobs',exact:true}).click();
+  await page.getByLabel('Upload Input File').setInputFiles('tests/fixtures/v5-integration.json');
+  await expect(page.locator('tbody tr')).toHaveCount(4);
+  await page.getByRole('button',{name:'Scheduling',exact:true}).click();
+  await page.locator('thead button').click();
+  const panel=page.getByRole('region',{name:'Scheduling Method',exact:true});
+  await expect(panel.getByRole('status')).toContainText('Automatically selected: CP-SAT');
+  await page.getByRole('button',{name:'Validate Data',exact:true}).click();
+  await expect(page.getByRole('heading',{name:'Data Validation Passed'})).toBeVisible();
+  await page.getByLabel('CP-SAT time budget').fill('5');
+  await expect(panel.getByRole('status')).toContainText('Automatically selected: GA (SS Micro-GA Fast)');
+  await expect(panel.getByRole('status')).toContainText('runtime budget');
+  await page.getByLabel('SS Micro-GA Fast time budget').fill('1');
+  await page.getByText('Advanced settings',{exact:true}).click();
+  await page.getByLabel('micro_generations',{exact:true}).fill('2');
+  await expect(page.getByLabel('exact_workers',{exact:true})).toHaveCount(0);
+  await expect(page.getByLabel('mlpso_population',{exact:true})).toHaveCount(0);
+  await expect(page.getByRole('button',{name:'Run Optimization',exact:true})).toBeEnabled();
+  const before=await panel.getByRole('status').innerText();
+  await page.screenshot({path:'.tmp-verification/automatic-method-review.png',fullPage:true});
+  await page.getByRole('button',{name:'Run Optimization',exact:true}).click();
+  await expect(page.getByRole('heading',{name:'Scheduling Result'})).toBeVisible({timeout:30000});
+  const rid=await page.evaluate(()=>sessionStorage.getItem('al13-run'));
+  const token=await page.evaluate(()=>sessionStorage.getItem('al13-token'));
+  const result=await(await request.get('/api/schedules/'+rid+'/result',{headers:{Authorization:'Bearer '+token}})).json();
+  expect(result.request.algorithms).toEqual([]);
+  expect(result.algorithms.map((a:any)=>a.algorithm)).toEqual(['SS Micro-GA Fast']);
+  expect(result.selected.feasible).toBe(true);
+  expect(result.selection_mode).toBe('Automatic');
+  expect(before).toContain(result.routing_reason);
+  await expect(page.getByText('Automatic selection:',{exact:false})).toContainText('GA (SS Micro-GA Fast)');
+});

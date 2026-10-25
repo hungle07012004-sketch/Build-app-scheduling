@@ -1,0 +1,10 @@
+{
+  "description": "This scheduling app streamlines appointment management for businesses and individuals, enhancing organization and efficiency in daily planning.",
+  "robots": {
+    "index": false
+  },
+  "accessibility": {
+    "addBypassLinks": false,
+    "ignoreReducedMotion": false
+  }
+}

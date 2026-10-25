@@ -1,0 +1,36 @@
+{
+  "solve_milp_instance.py": {
+    "source": "D:\\back up giga\\thesis\\flowlien dataset\\remake new data\\build app\\solve_milp_instance.py",
+    "source_sha256": "5c5454bfa1f773290ad7c102d2d1c3dc375116ea52927794aefebd5603fad74f",
+    "packaged_sha256": "90b763ebf4b7cc7fd88a6adc1e140f48a0b50fb763b51c73e806a059b32bc447"
+  },
+  "solve_ss_micro_ga_fast_instance.py": {
+    "source": "D:\\back up giga\\thesis\\flowlien dataset\\remake new data\\build app\\solve_ss_micro_ga_fast_instance.py",
+    "source_sha256": "59737f87a5bc1a3f0d9496e6b561391d088aa6ae326c279454a63dd0b2147dc4",
+    "packaged_sha256": "8ade21f156b39ba0879757ca0f8f18ed9274852087d76327240ec53afc9fe110",
+    "app_modified_sha256": "60c9cb89048b65cdbe498038acddb0379c3ee8dafc739ec8faeb1f2b19078d06",
+    "app_changes": "2026-10-12: cooperative deadline, independent stagnation stop, or optional seed/population deadline and small-population handling; decoder/objective/constraints preserved. 2026-10-15: return an explicit no-feasible-candidate result instead of exporting infinite fitness; search and constraints unchanged."
+  },
+  "benchmark_common_fast.py": {
+    "source": "D:\\back up giga\\thesis\\flowlien dataset\\remake new data\\build app\\benchmark_common_fast.py",
+    "source_sha256": "0038a5c0a248ca9d093442c568152c5d71853f7aad2cec44a74bbe106ee6be77",
+    "packaged_sha256": "072835a418346a5ce0b824e04a306b3b7410992d17cf4aca1509c80321c48e72"
+  },
+  "benchmark_common.py": {
+    "source": "D:\\back up giga\\thesis\\flowlien dataset\\correct workstation\\benchmark_common.py",
+    "source_sha256": "9dc9990704f4d5d2b053fdd1c4d4de934ed746c867f76aaae54e581c3eb7931a",
+    "packaged_sha256": "bd25036ad83ff3580ee1d8d959ab23d2ffe40f01e06fe3ed185125b2c0b65608"
+  },
+  "solve_improved_ga_instance.py": {
+    "source": "D:\\back up giga\\thesis\\flowlien dataset\\correct workstation\\solve_improved_ga_instance.py",
+    "source_sha256": "b320d5f7a80b15fe35eb3496cd1d94fde6629cd88b86d0a11f0eb414b936bdde",
+    "packaged_sha256": "cbec6b6047e25fbe094e16430b43fb4c529146b1e188cea0e03e8c96932eb444",
+    "app_modified_sha256": "b48d6ac4276b4268d59a6540432533dc3348f2704db9b369a0e303622f34dcba",
+    "app_changes": "2026-10-12: cooperative deadline, independent stagnation stop, or optional seed/population deadline and small-population handling; decoder/objective/constraints preserved."
+  },
+  "generate_benchmark_instances.py": {
+    "source": "D:\\back up giga\\thesis\\flowlien dataset\\correct workstation\\generate_benchmark_instances.py",
+    "source_sha256": "db0246ab31408d75cb8327dc59b1aa781c9329a4a4d298f24c855319781a8275",
+    "packaged_sha256": "3a3e317bd858399136b61e48a34b25622fbc2feb249d9550a3a54dc40ce28b88"
+  }
+}
