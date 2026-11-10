@@ -12,8 +12,10 @@ for(const action of ['Use latest calendar','Schedule with latest calendar','Adju
   await page.goto('/');await page.locator('input[type=password]').fill('planner-demo');
   await page.getByRole('button',{name:'Sign In',exact:true}).click();
   await expect(page.getByRole('heading',{name:'Production Dashboard'})).toBeVisible();
-  await page.getByRole('button',{name:'Analytics',exact:true}).click();
-  await page.getByText(fixture.small_id,{exact:true}).click();
+  await page.getByRole('button',{name:'Analytics & Reports',exact:true}).click();
+  await page.getByRole('button',{name:'Schedule Results',exact:true}).click();
+  await page.getByLabel('Search runs').fill(fixture.small_id);
+  await page.getByRole('button', {name: 'Open schedule '+fixture.small_id, exact: true}).click();
   await page.getByTestId('result-details').locator('summary').click();
   await expect(page.getByText(/Calendar used:/)).toBeVisible();
   await page.getByRole('button',{name:action,exact:true}).click();

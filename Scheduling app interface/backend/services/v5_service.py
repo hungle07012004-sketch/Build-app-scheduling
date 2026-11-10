@@ -5,6 +5,7 @@ from collections import Counter
 from datetime import datetime, timedelta
 from backend.errors import AppError
 from backend.services.working_calendar import apply_to_new_instance
+from backend.services.v5_validation import input_issues, check_raw_assignment, check_precedence
 
 SCHEMA = "AL13_BENCHMARK_V5"
 
@@ -43,6 +44,9 @@ def validate(data):
     from backend.solver_v5.benchmark_common import validate_instance_schema, V5ScheduleDecoder, JOB_LEVEL_OPS
     try:
         validate_instance_schema(data)
+        errors = input_issues(data)
+        if errors:
+            return errors
         def numeric(v):
             return isinstance(v, (int,float)) and not isinstance(v,bool) and math.isfinite(v)
         meta=data["metadata"]
@@ -94,6 +98,9 @@ def validate(data):
 
 def freeze(source, request):
     from backend.services.instance_service import parse_datetime
+    errors = input_issues(source)
+    if errors:
+        raise AppError("VALIDATION_FAILED", "Fix V5 input constraints before scheduling.", errors)
     data=copy.deepcopy(source)
     ids=request.job_ids
     if len(ids)!=len(set(ids)):
@@ -122,11 +129,15 @@ def standardize(algorithm, raw, data):
     try:
         if not rows or raw.get("feasible") is False:
             raise ValueError("Solver returned no feasible schedule.")
+        input_errors = validate(data)
+        if input_errors:
+            raise ValueError("Invalid frozen input: " + "; ".join(f"{e['entity']}.{e['field']}: {e['message']}" for e in input_errors))
         dec=V5ScheduleDecoder(data)
         oil={r["oil_cycle_id"]:r for r in data["oil_cycles"]}
         for r in rows:
             if r.get("Event_Type") not in ("JOB_OP","OIL_CYCLE","SETUP","2C_BATCH"):
                 raise ValueError("Unknown V5 schedule event.")
+            check_raw_assignment(data, r)
             values=[r.get(k) for k in ("Start_Min","Completion_Min","Processing_Min")]
             if not all(isinstance(v,(int,float)) and math.isfinite(v) for v in values):
                 raise ValueError("Non-finite event times.")
@@ -142,6 +153,8 @@ def standardize(algorithm, raw, data):
         # PRE order also validates CP-SAT's circuit predecessor / clean-pipeline setup.
         order=[r["Job_ID"] for r in sorted(rows,key=lambda r:r["Start_Min"]) if r.get("Operation_Code")=="PRE"]
         checked=_validate_warm_schedule(dec,order,{"makespan_min":cmax},rows)
+        check_precedence(data, [dict(eventType=r["Event_Type"],jobId=r["Job_ID"],
+            operation=r.get("Operation_Code"),startMin=r["Start_Min"],endMin=r["Completion_Min"]) for r in rows])
         completion=checked["job_completion_min"]
     except (ValueError,KeyError,TypeError,RuntimeError,OverflowError) as exc:
         errors=[{"entity":"V5 schedule","field":"physical_validation","message":str(exc)}]

@@ -14,16 +14,17 @@ for(const v5 of [true,false]) test('Scheduling Method guidance and availability:
   await page.locator('input[type=password]').fill('planner-demo');
   await page.getByRole('button',{name:'Sign In',exact:true}).click();
   await expect(page.getByRole('heading',{name:'Production Dashboard'})).toBeVisible();
-  await page.getByRole('button',{name:'Scheduling',exact:true}).click();
+  await page.getByRole('button',{name:'Scheduling Studio',exact:true}).click();
   const section=page.getByRole('region',{name:'Scheduling Method',exact:true});
   await expect(page.getByRole('radio',{name:'Automatic',exact:true})).toBeChecked();
   await expect(section.getByText('Recommended',{exact:true})).toBeVisible();
   for(let i=0;i<4;i++)await page.locator('tbody tr').nth(i).click();
-  await expect(section.getByRole('status')).toContainText('Automatically selected: '+(v5?'CP-SAT':'GA'));
+  // Guidance banners were intentionally removed; preview still calls the API.
+  await expect(section.getByRole('status')).toHaveCount(0);
   await page.getByRole('radio',{name:v5?'CP-SAT':'GA',exact:true}).check();
   await expect(page.getByRole('radio',{name:v5?'CP-SAT':'GA',exact:true})).toBeChecked();
-  await page.screenshot({path:'.tmp-verification/method-small-'+(v5?'v5':'legacy')+'.png',fullPage:true,animations:'disabled'});
-  await page.locator('thead button').click();
+  await page.screenshot({path:test.info().outputPath('method-small-'+(v5?'v5':'legacy')+'.png'),fullPage:true,animations:'disabled'});
+  await page.getByRole('checkbox',{name:'Select all filtered jobs'}).check();
   await expect(page.getByRole('radio',{name:v5?'CP-SAT':'GA',exact:true})).toBeChecked();
   await expect(section.getByRole('status')).toHaveCount(0);
   await expect(section.getByRole('radio')).toHaveCount(4);
@@ -37,6 +38,6 @@ for(const v5 of [true,false]) test('Scheduling Method guidance and availability:
   await expect(page.getByRole('radio',{name:v5?'MLPSO':'CP-SAT',exact:true})).toBeDisabled();
   await page.getByRole('radio',{name:'Automatic',exact:true}).check();
   await expect(page.getByRole('radio',{name:'Automatic',exact:true})).toBeChecked();
-  await expect(section.getByRole('status')).toContainText('Automatically selected: '+(v5?'GA':'MLPSO'));
-  await page.screenshot({path:'.tmp-verification/method-large-'+(v5?'v5':'legacy')+'.png',fullPage:true,animations:'disabled'});
+  await expect(section.getByRole('status')).toHaveCount(0);
+  await page.screenshot({path:test.info().outputPath('method-large-'+(v5?'v5':'legacy')+'.png'),fullPage:true,animations:'disabled'});
 });

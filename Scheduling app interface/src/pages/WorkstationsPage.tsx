@@ -25,10 +25,10 @@ function DrawerPanel({ ws, onClose }: { ws: WorkstationData; onClose: () => void
             <div className="flex-1 h-3 bg-slate-100 rounded-full overflow-hidden">
               <div
                 className="h-full rounded-full"
-                style={{ width: `${ws.utilization}%`, backgroundColor: ws.utilization > 85 ? '#EF4444' : ws.utilization > 65 ? '#F59E0B' : '#10B981' }}
+                style={{ width: `${ws.utilization ?? 0}%`, backgroundColor: (ws.utilization ?? -1) > 85 ? '#EF4444' : (ws.utilization ?? -1) > 65 ? '#F59E0B' : '#10B981' }}
               />
             </div>
-            <span className="text-sm font-bold text-[#0F172A] w-10 text-right">{ws.utilization}%</span>
+            <span className="text-sm font-bold text-[#0F172A] w-10 text-right">{ws.utilization === null ? '\u2014' : `${ws.utilization}%`}</span>
           </div>
         </div>
         <div>
@@ -91,14 +91,14 @@ export default function WorkstationsPage() {
                 <div className="mb-2">
                   <div className="flex justify-between text-xs mb-1">
                     <span className="text-[#64748B]">Utilization</span>
-                    <span className="font-semibold text-[#0F172A]">{ws.utilization}%</span>
+                    <span className="font-semibold text-[#0F172A]">{ws.utilization === null ? '\u2014' : `${ws.utilization}%`}</span>
                   </div>
                   <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
                     <div
                       className="h-full rounded-full"
                       style={{
-                        width: `${ws.utilization}%`,
-                        backgroundColor: ws.utilization > 85 ? '#EF4444' : ws.utilization > 65 ? '#F59E0B' : '#10B981'
+                        width: `${ws.utilization ?? 0}%`,
+                        backgroundColor: (ws.utilization ?? -1) > 85 ? '#EF4444' : (ws.utilization ?? -1) > 65 ? '#F59E0B' : '#10B981'
                       }}
                     />
                   </div>
@@ -148,10 +148,10 @@ export default function WorkstationsPage() {
                         <div className="w-16 h-1.5 bg-slate-100 rounded-full overflow-hidden">
                           <div
                             className="h-full rounded-full"
-                            style={{ width: `${ws.utilization}%`, backgroundColor: ws.utilization > 85 ? '#EF4444' : ws.utilization > 65 ? '#F59E0B' : '#10B981' }}
+                            style={{ width: `${ws.utilization ?? 0}%`, backgroundColor: (ws.utilization ?? -1) > 85 ? '#EF4444' : (ws.utilization ?? -1) > 65 ? '#F59E0B' : '#10B981' }}
                           />
                         </div>
-                        <span className="text-xs font-medium text-[#0F172A]">{ws.utilization}%</span>
+                        <span className="text-xs font-medium text-[#0F172A]">{ws.utilization === null ? '\u2014' : `${ws.utilization}%`}</span>
                       </div>
                     </td>
                     <td className="px-4 py-3"><StatusChip status={ws.status} /></td>

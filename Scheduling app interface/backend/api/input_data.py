@@ -5,7 +5,7 @@ from backend.config import MAX_UPLOAD_BYTES
 from backend.errors import AppError
 from backend.models.schemas import JobUpdate
 from backend.services import input_service
-from backend.services.analytics_service import overview
+from backend.services.analytics_service import overview, _fingerprint
 
 router = APIRouter(prefix="/api",dependencies=[Depends(require_user)])
 
@@ -42,10 +42,12 @@ def stations(dataset_id: str | None=None):
         if exc.status==404 and dataset_id is None: return []
         raise
     data = row["instance"]
-    planned = {s["id"]:s for s in overview()["workstations"]} if not dataset_id else {}
+    analytics = overview()
+    same_calendar = analytics["accepted_calendar_signature"] == _fingerprint(data.get("station_windows", {}))
+    planned = {s["id"]:s for s in analytics["workstations"]} if analytics["accepted_dataset_id"] == row["id"] and same_calendar else {}
     return [dict(s,id=s["station_id"],stage=s["station_group"],currentJob=None,
         availability="Calendar available" if data["station_windows"].get(s["station_id"]) else "No working window",
-        utilization=planned.get(s["station_id"],{}).get("utilization",0),
+        utilization=planned.get(s["station_id"],{}).get("utilization"),
         status="Available" if data["station_windows"].get(s["station_id"]) else "Downtime",
         upcomingJobs=planned.get(s["station_id"],{}).get("upcomingJobs",[])) for s in data["station_master"]]
 

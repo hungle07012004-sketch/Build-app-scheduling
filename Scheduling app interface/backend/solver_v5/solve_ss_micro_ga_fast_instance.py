@@ -271,11 +271,33 @@ def run_one_ss_micro_ga(
     cache: Dict[object, object] = {}
 
     t0 = time.perf_counter()
+    best_ch = None
+    best_key = (math.inf,)
+    best_metrics = (math.inf, math.inf, len(decoder.jobs), math.inf)
+    best_epoch = evals_to_best = 0
+    time_to_best = 0.0
+    archive = []
+    epoch = -1  # Initial population is epoch zero; offspring use epoch + 1.
+    improved_this_epoch = False
+
     # Always obtain one incumbent; stop between complete evaluations thereafter.
     def evaluate_one(ch):
+        nonlocal best_ch, best_key, best_metrics, best_epoch, evals_to_best
+        nonlocal time_to_best, archive, improved_this_epoch
         if ch not in cache and cache and deadline is not None and time.perf_counter() >= deadline:
             raise _SearchTimeExpired()
-        return base.evaluate_one(ch, decoder, cache)
+        entry = base.evaluate_one(ch, decoder, cache)
+        key, metrics, _ = entry
+        # Record every completed improvement, including rescue evaluations that
+        # exhaust the budget or are followed by a partial-batch deadline.
+        if best_ch is None or key < best_key:
+            best_ch, best_key, best_metrics = ch, key, metrics
+            best_epoch = epoch + 1
+            evals_to_best = len(cache)
+            time_to_best = time.perf_counter() - t0
+            improved_this_epoch = True
+            archive = _update_archive(archive, [(key, ch)], archive_size)
+        return entry
 
     def evaluate_population(chromosomes):
         entries = [evaluate_one(ch) for ch in chromosomes]
@@ -288,14 +310,6 @@ def run_one_ss_micro_ga(
         pop = [ch for ch in pop if ch in cache]
     keys, metrics, init_decodes = evaluate_population(pop)
     order = sorted(range(len(pop)), key=lambda i: keys[i])
-
-    best_i = order[0]
-    best_ch = pop[best_i]
-    best_key = keys[best_i]
-    best_metrics = metrics[best_i]
-    best_epoch = 0
-    evals_to_best = len(cache)
-    time_to_best = time.perf_counter() - t0
 
     archive = _update_archive([], [(keys[i], pop[i]) for i in order], archive_size)
     convergence: List[dict] = []
@@ -314,6 +328,36 @@ def run_one_ss_micro_ga(
     last_div = base.population_diversity(pop, diag_rng)
     last_ur = base.unique_ratio(pop)
 
+    def record_convergence(final_reason=""):
+        if not collect_convergence:
+            return
+        # A deadline can interrupt population replacement. Report only completed
+        # cached evaluations; logging must never decode or consume random draws.
+        cvals = [float(cache[ch][1][0]) for ch in pop if ch in cache]
+        row = {
+            "Epoch": int(epoch),
+            "Best_Cmax_Min": float(best_metrics[0]),
+            "Population_Best_Min": min(cvals) if cvals else None,
+            "Population_Mean_Min": sum(cvals) / len(cvals) if cvals else None,
+            "Population_Worst_Min": max(cvals) if cvals else None,
+            "Population_Diversity": float(last_div),
+            "Unique_Chromosome_Ratio": float(last_ur),
+            "Mutation_Rate": float(base.adaptive_mutation(
+                mutation_rate, mutation_max, last_div, stall, max(1, restart_after))),
+            "Stall": int(stall),
+            "Decoder_Evaluations": int(len(cache)),
+            "Evaluations_To_Best": int(evals_to_best),
+            "Time_To_Best_Sec": float(time_to_best),
+            "Archive_Size": int(len(archive)),
+            "Restarts": int(restart_count),
+            "Immigrant_Events": int(immigrant_events),
+            "Stop_Reason": final_reason,
+        }
+        if convergence and convergence[-1]["Epoch"] == epoch:
+            convergence[-1] = row
+        else:
+            convergence.append(row)
+
     if progress_every > 0:
         print(
             f"[{progress_label}] start | seed={seed} | mu={len(pop)} | lambda={offspring_count} | "
@@ -325,6 +369,7 @@ def run_one_ss_micro_ga(
     last_restart_epoch = -restart_grace
     try:
         for epoch in range(generations + 1):
+            improved_this_epoch = False
             if deadline is not None and time.perf_counter() >= deadline:
                 stop_reason = "time_limit"
                 break
@@ -349,24 +394,7 @@ def run_one_ss_micro_ga(
             if collect_convergence and (
                 epoch == 0 or epoch == generations or epoch % max(1, convergence_every) == 0
             ):
-                cvals = [float(m[0]) for m in metrics]
-                convergence.append({
-                    "Epoch": int(epoch),
-                    "Best_Cmax_Min": float(best_metrics[0]),
-                    "Population_Best_Min": float(min(cvals)),
-                    "Population_Mean_Min": float(sum(cvals) / len(cvals)),
-                    "Population_Worst_Min": float(max(cvals)),
-                    "Population_Diversity": float(last_div),
-                    "Unique_Chromosome_Ratio": float(last_ur),
-                    "Mutation_Rate": float(pm),
-                    "Stall": int(stall),
-                    "Decoder_Evaluations": int(len(cache)),
-                    "Evaluations_To_Best": int(evals_to_best),
-                    "Time_To_Best_Sec": float(time_to_best),
-                    "Archive_Size": int(len(archive)),
-                    "Restarts": int(restart_count),
-                    "Immigrant_Events": int(immigrant_events),
-                })
+                record_convergence()
     
             if progress_every > 0 and (
                 epoch == 0 or epoch == generations or epoch % max(1, progress_every) == 0
@@ -506,7 +534,7 @@ def run_one_ss_micro_ga(
                 if max_decodes > 0 and len(cache) >= max_decodes:
                     stop_reason = "decoder_budget"
                     break
-                stall += 1
+                stall = 0 if improved_this_epoch else stall + 1
                 continue
     
             # Immediate steady-state (mu + lambda) replacement.
@@ -541,30 +569,16 @@ def run_one_ss_micro_ga(
             # Check global improvement immediately after this small offspring batch.
             keys, metrics, _ = evaluate_population(pop)
             order = sorted(range(len(pop)), key=lambda i: keys[i])
-            bi = order[0]
-            if keys[bi] < best_key:
-                best_key = keys[bi]
-                best_ch = pop[bi]
-                best_metrics = metrics[bi]
-                best_epoch = epoch + 1
-                evals_to_best = len(cache)
-                time_to_best = time.perf_counter() - t0
+            if improved_this_epoch:
                 stall = 0
-                archive = _update_archive(archive, [(best_key, best_ch)], archive_size)
             else:
                 stall += 1
     except _SearchTimeExpired:
         stop_reason = "time_limit"
-        # An evaluation may have improved the incumbent before a partial batch stopped.
-        candidate = min(cache, key=lambda ch: cache[ch][0])
-        if cache[candidate][0] < best_key:
-            best_ch = candidate
-            best_key, best_metrics = cache[candidate]
-            best_epoch = epoch
-            evals_to_best = len(cache)
-            time_to_best = time.perf_counter() - t0
+        # evaluate_one has already retained every completed improvement.
 
     runtime = time.perf_counter() - t0
+    record_convergence(stop_reason)
     best_ids = [decoder.jobs[i] for i in best_ch]
 
     if progress_every > 0:
@@ -823,30 +837,6 @@ def solve_instance(
 
     run_results.sort(key=lambda r: r["seed"])
     best = min(run_results, key=lambda r: fitness_key(r["best_metrics"]))
-    if not math.isfinite(float(best["best_metrics"]["makespan_min"])):
-        # An unsuccessful heuristic search is not a solver crash or a proof of
-        # infeasibility. Do not try exporting an infinite-fitness incumbent.
-        diagnostic = "No feasible candidate was found."
-        try:
-            base_decoder.decode(best["best_chromosome"], keep_schedule=False)
-        except RuntimeError as exc:
-            diagnostic = str(exc)
-        return {
-            "feasible": False, "status_name": "No feasible schedule found",
-            "message": "GA did not find a feasible schedule within the search limits. "
-                       "Review the selected planning horizon and staffed calendar, or try fewer jobs. "
-                       "This does not prove the problem is infeasible.",
-            "diagnostic": diagnostic,
-            "total_runtime_sec": time.perf_counter() - total_start,
-            "search_stop_reason": best["stop_reason"],
-            "unique_evaluations": sum(r["unique_evaluations"] for r in run_results),
-            "completed_runs": len(run_results), "schedule": [],
-        }
-    best_metrics, schedule = base_decoder.decode(
-        best["best_chromosome"], keep_schedule=True, validate_chromosome=True
-    )
-    total_runtime = time.perf_counter() - total_start
-
     run_summaries = []
     for i, r in enumerate(run_results, 1):
         generated = int(r["screen_candidates_generated"])
@@ -877,6 +867,35 @@ def solve_instance(
             "pmx_crossovers": int(r["crossover_usage"]["pmx"]),
             "pbx_crossovers": int(r["crossover_usage"]["pbx"]),
         })
+
+    if not math.isfinite(float(best["best_metrics"]["makespan_min"])):
+        # An unsuccessful heuristic search is not a solver crash or a proof of
+        # infeasibility. Do not try exporting an infinite-fitness incumbent.
+        diagnostic = "No feasible candidate was found."
+        try:
+            base_decoder.decode(best["best_chromosome"], keep_schedule=False)
+        except RuntimeError as exc:
+            diagnostic = str(exc)
+        return {
+            "feasible": False, "status_name": "No feasible schedule found",
+            "message": "GA did not find a feasible schedule within the search limits. "
+                       "Review the selected planning horizon and staffed calendar, or try fewer jobs. "
+                       "This does not prove the problem is infeasible.",
+            "diagnostic": diagnostic,
+            "total_runtime_sec": time.perf_counter() - total_start,
+            "search_stop_reason": best["stop_reason"],
+            "unique_evaluations": sum(r["unique_evaluations"] for r in run_results),
+            "completed_runs": len(run_results), "schedule": [],
+            "run_summaries": run_summaries,
+            "convergence_by_run": [
+                {"run": i + 1, "seed": int(r["seed"]), "trace": r["convergence"]}
+                for i, r in enumerate(run_results)
+            ] if collect_convergence else None,
+        }
+    best_metrics, schedule = base_decoder.decode(
+        best["best_chromosome"], keep_schedule=True, validate_chromosome=True
+    )
+    total_runtime = time.perf_counter() - total_start
 
     best_run_index = next(i for i, r in enumerate(run_results) if r["seed"] == best["seed"])
 

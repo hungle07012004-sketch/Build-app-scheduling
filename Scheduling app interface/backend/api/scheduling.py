@@ -25,8 +25,10 @@ def status(run_id: str):
     return schedules.status(run_id)
 
 @router.get("/schedules/{run_id}/result")
-def result(run_id: str):
+def result(run_id: str, validate_export: bool = False):
     row = schedules.get_run(run_id)
+    if validate_export:
+        schedules.validate_saved_selection(row)
     return {**row["result"],"run_id":run_id,"status":row["status"],"accepted_at":row["accepted_at"],"applied_at":row["applied_at"],"request":row["request"]}
 
 @router.post("/schedules/{run_id}/accept")

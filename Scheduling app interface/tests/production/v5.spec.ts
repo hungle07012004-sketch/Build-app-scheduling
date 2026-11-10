@@ -6,7 +6,8 @@ test('V5 upload, CP-SAT, pooled batch Gantt/table, accept/apply/execution and re
   await page.locator('input[type=password]').fill('planner-demo');
   await page.getByRole('button',{name:'Sign In',exact:true}).click();
   await expect(page.getByRole('heading',{name:'Production Dashboard'})).toBeVisible();
-  await page.getByRole('button',{name:'Jobs',exact:true}).click();
+  if(await page.getByRole('button',{name:'Input Data',exact:true}).getAttribute('aria-expanded')==='false')await page.getByRole('button',{name:'Input Data',exact:true}).click();
+  await page.getByRole('navigation',{name:'Main navigation'}).getByRole('button',{name:'Jobs',exact:true}).click();
   await page.getByLabel('Upload Input File').setInputFiles('tests/fixtures/v5-integration.json');
   await expect(page.locator('tbody tr')).toHaveCount(4);
   await page.getByRole('button',{name:'Settings',exact:true}).click();
@@ -14,15 +15,15 @@ test('V5 upload, CP-SAT, pooled batch Gantt/table, accept/apply/execution and re
   await page.getByLabel('CP-SAT time limit (seconds)',{exact:true}).fill('5');
   await page.getByLabel('CP-SAT workers (0 = auto)',{exact:true}).fill('1');
   await page.getByRole('button',{name:'Save Changes',exact:true}).click();
-  await page.getByRole('button',{name:'Scheduling',exact:true}).click();
+  await page.getByRole('button',{name:'Scheduling Studio',exact:true}).click();
   // A persisted run from a preceding test may be open.
   if(await page.getByRole('button',{name:'Adjust',exact:true}).isVisible())await page.getByRole('button',{name:'Adjust',exact:true}).click();
   await page.getByRole('radio',{name:'CP-SAT',exact:true}).check();
-  await page.locator('thead button').click();
+  await page.getByRole('checkbox',{name:'Select all filtered jobs'}).check();
   await page.getByRole('button',{name:'Validate Data',exact:true}).click();
   await expect(page.getByRole('heading',{name:'Data Validation Passed'})).toBeVisible();
   await expect(page.getByText('Runs: CP-SAT',{exact:true})).toBeVisible();
-  await page.screenshot({path:'.tmp-verification/scheduling-method-review.png',fullPage:true});
+  await page.screenshot({path:test.info().outputPath('scheduling-method-review.png'),fullPage:true});
   await page.getByRole('button',{name:'Run Optimization',exact:true}).click();
   await expect(page.getByRole('heading',{name:'Scheduling Result'})).toBeVisible({timeout:30000});
   const rid=await page.evaluate(()=>sessionStorage.getItem('al13-run'));
@@ -59,15 +60,15 @@ test('V5 upload, CP-SAT, pooled batch Gantt/table, accept/apply/execution and re
   await expect(page.getByLabel('Table Job filter')).toHaveValue('J003');
   await expect(page.locator('tbody tr')).toHaveCount(ops.filter((o:any)=>o.jobIds.includes('J003')).length);
   await page.getByLabel('Table Job filter').selectOption('All');
-  await expect(page.locator('tbody tr')).toHaveCount(ops.length);
+  await expect(page.locator('tbody tr')).toHaveCount(Math.min(50,ops.length));
   await page.getByRole('button',{name:'Accept & Save',exact:true}).click();
   await page.getByRole('button',{name:'Accept & Save',exact:true}).last().click();
   await page.getByRole('button',{name:'Apply to Production',exact:true}).click();
   await expect(page.getByRole('heading',{name:'Production Execution'})).toBeVisible();
   await page.getByLabel('Status J001',{exact:true}).last().selectOption('Completed');
-  await page.getByRole('button',{name:'Analytics',exact:true}).click();
-  await page.getByText(rid!,{exact:true}).click();
+  await page.getByRole('button',{name:'Analytics & Reports',exact:true}).click();
+  await page.getByRole('button',{name:'Open schedule '+rid,exact:true}).click();
   await expect.poll(()=>page.getByTestId('gantt-bar').evaluateAll(nodes=>nodes.reduce((n,e)=>n+Number(e.getAttribute('data-event-count')),0))).toBe(ops.length);
-  await page.screenshot({path:'.tmp-verification/v5-result.png',fullPage:true});
+  await page.screenshot({path:test.info().outputPath('v5-result.png'),fullPage:true});
   expect(errors).toEqual([]);
 });

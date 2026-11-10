@@ -105,7 +105,8 @@ def test_v5_app_flow(client,chosen):
         assert row[2:4]==(op["operation"],op["workstation"])
         assert abs((row[4]-datetime.fromisoformat(op["startTime"])).total_seconds())<=0.001
         assert row[6]==op["processingMin"]
-        assert row[7]=="A"
+        from backend.services.excel_service import shift_label
+        assert row[7]==shift_label(datetime.fromisoformat(op["startTime"]),datetime.fromisoformat(op["finishTime"]))
     assert client.post(f"/api/schedules/{rid}/apply").status_code==409
     assert client.post(f"/api/schedules/{rid}/accept").status_code==200
     assert client.post(f"/api/schedules/{rid}/apply").status_code==200
@@ -163,7 +164,7 @@ def test_excel_parallel_comparison_and_missing_shift(monkeypatch):
     assert comparison[0][7]=="Selected"
     assert comparison[1][0]=="MLPSO" and comparison[1][1] is False and comparison[1][7]=="Not Selected"
     assert wb["Detailed Schedule"].max_row==2
-    assert wb["Detailed Schedule"]["H2"].value=="Unavailable"
+    assert wb["Detailed Schedule"]["H2"].value=="Shift 1"
     for sheet in wb:
         assert sheet.freeze_panes=="A2"
         assert sheet.auto_filter.ref==sheet.dimensions

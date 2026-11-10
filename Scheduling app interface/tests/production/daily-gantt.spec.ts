@@ -21,7 +21,9 @@ for(const sundayWorks of [false,true]) test(`Daily boundaries, overlap and Sunda
   await page.route('**/api/calendar?run_id=*',r=>r.fulfill({json:calendar}));
   await page.goto('/');await page.locator('input[type=password]').fill('planner-demo');await page.getByRole('button',{name:'Sign In',exact:true}).click();
   await expect(page.getByRole('heading',{name:'Production Dashboard'})).toBeVisible();
-  await page.getByRole('button',{name:'Analytics',exact:true}).click();await page.getByText(fixture.small_id,{exact:true}).click();
+  await page.getByRole('button',{name:'Analytics & Reports',exact:true}).click();await page.getByRole('button',{name:'Schedule Results',exact:true}).click();
+  await page.getByLabel('Search runs').fill(fixture.small_id);
+  await page.getByRole('button', {name: 'Open schedule '+fixture.small_id, exact: true}).click();
   const picker=page.getByLabel('Gantt Date'),scroll=page.getByTestId('gantt-scroll'),bars=page.getByTestId('gantt-bar');
   await picker.fill('2026-10-03');
   await expect(bars).toHaveCount(3);
@@ -40,13 +42,13 @@ for(const sundayWorks of [false,true]) test(`Daily boundaries, overlap and Sunda
   await page.getByLabel('Shift filter',{exact:true}).selectOption('Shift1');
   await expect(bars).toHaveCount(1);
   await page.getByLabel('Shift filter',{exact:true}).selectOption('All');
-  await page.screenshot({path:`.tmp-verification/daily-cross-midnight-${sundayWorks}.png`});
+  await page.screenshot({path:test.info().outputPath(`daily-cross-midnight-${sundayWorks}.png`)});
   await page.getByRole('button',{name:'Next Day',exact:true}).click();
   await expect(picker).toHaveValue('2026-10-04');
   const gaps=page.getByTestId('non-working-time');await expect(gaps).toHaveCount(sundayWorks?2:1);
   const gapDuration=await gaps.evaluateAll(ns=>ns.reduce((a,n)=>a+Number(n.getAttribute('data-end'))-Number(n.getAttribute('data-start')),0));
   expect(gapDuration/3600000).toBe(sundayWorks?16:24);
-  await page.screenshot({path:`.tmp-verification/daily-sunday-${sundayWorks}.png`});
+  await page.screenshot({path:test.info().outputPath(`daily-sunday-${sundayWorks}.png`)});
   // Navigation remains on the requested day even while filtering.
   await page.getByLabel('Operation filter',{exact:true}).selectOption('FINAL');await expect(picker).toHaveValue('2026-10-04');
   await page.getByLabel('Workstation filter',{exact:true}).selectOption('WS_FINAL');await expect(picker).toHaveValue('2026-10-04');
@@ -64,6 +66,6 @@ for(const sundayWorks of [false,true]) test(`Daily boundaries, overlap and Sunda
   await page.getByRole('button',{name:'Clear / Reset',exact:true}).click();
   await page.getByRole('button',{name:'Fit Schedule',exact:true}).click();await expect(bars).toHaveCount(4);
   expect(Number(await scroll.getAttribute('data-domain-end'))).toBe(stamp('2026-11-30 00:00:00'));
-  await page.screenshot({path:`.tmp-verification/daily-calendar-${sundayWorks}.png`});
+  await page.screenshot({path:test.info().outputPath(`daily-calendar-${sundayWorks}.png`)});
   expect(calls).toEqual([]);
 });

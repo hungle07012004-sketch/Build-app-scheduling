@@ -97,6 +97,11 @@ def _metric_cmax(metrics: Sequence[float]) -> float:
 
 def evaluate_one(ch, decoder: V5ScheduleDecoder, cache: MutableMapping):
     """Evaluate one COMPLETE permutation; return (Cmax-key, metrics, new_decode)."""
+    # Check before cache lookup: bool/float genes can alias valid integer keys.
+    if not decoder.valid_chromosome_indices(ch):
+        return (math.inf,), (math.inf, math.inf, len(decoder.jobs), math.inf), 0
+    if not isinstance(ch, (bytes, tuple)):
+        ch = tuple(ch)
     entry = cache.get(ch)
     if entry is not None:
         return entry[0], entry[1], 0

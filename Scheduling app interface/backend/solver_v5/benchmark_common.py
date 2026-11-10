@@ -29,6 +29,7 @@ from __future__ import annotations
 import bisect
 import json
 import math
+from numbers import Integral
 from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
@@ -650,6 +651,18 @@ class V5ScheduleDecoder:
         }
         return metrics, rows
 
+    def valid_chromosome_indices(self, chromosome_indices: Sequence[int]) -> bool:
+        """Validate the permutation before indexing jobs or consulting fitness caches."""
+        try:
+            return (
+                len(chromosome_indices) == len(self.jobs)
+                and all(isinstance(i, Integral) and not isinstance(i, bool)
+                        and 0 <= i < len(self.jobs) for i in chromosome_indices)
+                and len(set(chromosome_indices)) == len(self.jobs)
+            )
+        except TypeError:
+            return False
+
     def decode_indices(self, chromosome_indices: Sequence[int]) -> Tuple[float, float, int, float]:
         """Metric-only GA decode. Infeasible permutations receive +inf fitness.
 
@@ -657,6 +670,8 @@ class V5ScheduleDecoder:
         can exhaust the horizon.  That is a legitimate infeasible chromosome, not
         a solver crash.
         """
+        if not self.valid_chromosome_indices(chromosome_indices):
+            return (math.inf, math.inf, len(self.jobs), math.inf)
         ids = [self.jobs[int(i)] for i in chromosome_indices]
         try:
             m, _ = self.decode(ids, keep_schedule=False, validate_chromosome=False)

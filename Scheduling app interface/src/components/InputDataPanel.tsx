@@ -3,9 +3,9 @@ import { api, ApiError, useApi } from '../api';
 import { useAppData } from '../AppData';
 import ApiNotice from './ApiNotice';
 
-export default function InputDataPanel() {
+export default function InputDataPanel({initialTab='jobs'}:{initialTab?:string}) {
   const {dataset,refresh} = useAppData();
-  const [tab,setTab] = useState('jobs');
+  const [tab,setTab] = useState(initialTab);
   const [uploading,setUploading] = useState(false);
   const [error,setError] = useState('');
   const [search,setSearch] = useState('');

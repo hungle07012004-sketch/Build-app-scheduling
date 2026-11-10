@@ -4,7 +4,7 @@ export const timestamp=(value:string)=>new Date(value.replace(' ','T')).getTime(
 export const operationLabel=(op:string)=>op==='OIL_CYCLE'?'OIL':op==='2C_BATCH'?'2C BATCH':op;
 
 // Presentation only. Source events remain the schedule/table/export authority.
-export function layoutOperations(tasks:GanttTask[]) {
+export function layoutOperations(tasks:GanttTask[], groupBy:'Workstation'|'Job'='Workstation') {
   const buckets=new Map<string,GanttTask[]>();
   tasks.forEach((task,index)=>{
     const groupable=['OIL','OIL_CYCLE','2C_BATCH'].includes(task.operation);
@@ -26,7 +26,11 @@ export function layoutOperations(tasks:GanttTask[]) {
     }
   }
   const stations=new Map<string,VisualOperation[]>();
-  for(const task of groups){const list=stations.get(task.workstation)||[];list.push(task);stations.set(task.workstation,list);}
+  for(const task of groups) {
+    for(const key of groupBy==='Job'?taskJobIds(task):[task.workstation]) {
+      const list=stations.get(key)||[];list.push({...task});stations.set(key,list);
+    }
+  }
   let maxLanes=1;
   for(const list of stations.values()){
     list.sort((a,b)=>timestamp(a.startTime)-timestamp(b.startTime)||timestamp(a.finishTime)-timestamp(b.finishTime));

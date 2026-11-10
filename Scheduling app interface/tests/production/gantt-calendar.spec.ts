@@ -1,6 +1,6 @@
 import {test,expect} from '@playwright/test';
 import {readFileSync} from 'node:fs';
-import {indexCalendar,operationShifts,weeklyShutdowns,calendarStamp,type CalendarWindow} from '../../src/components/ganttCalendar';
+import {calendarReason,indexCalendar,operationShifts,weeklyShutdowns,calendarStamp,type CalendarWindow} from '../../src/components/ganttCalendar';
 import type {GanttTask} from '../../src/data';
 
 const time=(s:string)=>calendarStamp(s);
@@ -27,7 +27,7 @@ test('Adjacent saved shifts allow continuous cross-shift work for every listed r
 test('Operator gap is detected without shading another resource or inventing a reason',()=>{
   const c=indexCalendar([window('WS_A','2026-10-02 06:00','2026-10-02 22:00'),window('OP_A','2026-10-02 06:00','2026-10-02 14:00'),window('OP_A','2026-10-02 14:30','2026-10-02 22:00')]);
   const check=c.check(operation('2026-10-02 13:00','2026-10-02 15:00'));
-  expect(check.overlaps).toEqual([{resource:'OP_A',start:time('2026-10-02 14:00'),end:time('2026-10-02 14:30'),kind:'unknown',reason:'Reason not recorded'}]);
+  expect(check.overlaps).toEqual([{resource:'OP_A',start:time('2026-10-02 14:00'),end:time('2026-10-02 14:30'),kind:'unknown',reason:'Reason not recorded in saved calendar'}]);
   expect(c.shading('WS_A',time('2026-10-02 06:00'),time('2026-10-02 22:00'))).toEqual([]);
   expect(c.check(operation('2026-10-02 13:00','2026-10-02 14:00')).overlaps).toEqual([]);
 });
@@ -35,8 +35,8 @@ test('Operator gap is detected without shading another resource or inventing a r
 test('Saturday shift stops at Sunday midnight and Monday restarts at 06:00',()=>{
   const c=indexCalendar(['WS_A','OP_A'].flatMap(r=>[window(r,'2026-10-03 22:00','2026-10-04 00:00'),window(r,'2026-10-05 06:00','2026-10-05 14:00')]));
   const a=time('2026-10-04 00:00'),b=time('2026-10-05 00:00');
-  expect(c.shading('WS_A',a,b)).toEqual([{resource:'WS_A',start:a,end:b,kind:'sunday',reason:'Reason not recorded'}]);
-  expect(c.shading('WS_A',b,time('2026-10-05 07:00'))).toEqual([{resource:'WS_A',start:b,end:time('2026-10-05 06:00'),kind:'sunday',reason:'Reason not recorded'}]);
+  expect(c.shading('WS_A',a,b)).toEqual([{resource:'WS_A',start:a,end:b,kind:'sunday',reason:'Reason not recorded in saved calendar'}]);
+  expect(c.shading('WS_A',b,time('2026-10-05 07:00'))).toEqual([{resource:'WS_A',start:b,end:time('2026-10-05 06:00'),kind:'sunday',reason:'Reason not recorded in saved calendar'}]);
   const check=c.check(operation('2026-10-03 23:00','2026-10-04 01:00'));
   expect(check.overlaps.map(g=>g.resource)).toEqual(['WS_A','OP_A']);
   expect(check.weekly).toEqual([{start:a,end:time('2026-10-04 01:00')}]);
@@ -81,9 +81,11 @@ for(const corrected of [false,true])test(`Calendar legend, shift tooltip and rev
   await page.route('**/api/schedules/'+fixture.small_id+'/result',r=>r.fulfill({json:{...saved,selected:{...saved.selected,operations:ops,metadata:{...saved.selected.metadata,...(corrected?{working_calendar_policy:'MON_SAT_SUN00_MON06_V1'}:{})}}}}));
   await page.route('**/api/calendar?run_id=*',r=>r.fulfill({json:calendar}));
   await page.goto('/');await page.locator('input[type=password]').fill('planner-demo');await page.getByRole('button',{name:'Sign In',exact:true}).click();
-  await expect(page.getByRole('heading',{name:'Production Dashboard'})).toBeVisible();await page.getByRole('button',{name:'Analytics',exact:true}).click();await page.getByText(fixture.small_id,{exact:true}).click();
+  await expect(page.getByRole('heading',{name:'Production Dashboard'})).toBeVisible();await page.getByRole('button',{name:'Analytics & Reports',exact:true}).click();await page.getByRole('button',{name:'Schedule Results',exact:true}).click();
+  await page.getByLabel('Search runs').fill(fixture.small_id);
+  await page.getByRole('button', {name: 'Open schedule '+fixture.small_id, exact: true}).click();
   await expect(page.getByLabel('Calendar legend')).not.toContainText('Break:');
-  await expect(page.getByLabel('Calendar legend')).toContainText('Unavailable');
+  await expect(page.getByLabel('Calendar legend')).toContainText('Unavailable (saved calendar)');
   await expect(page.getByLabel('Calendar legend')).toContainText('Sunday Shutdown');
   await expect(page.getByLabel('Calendar legend')).toContainText('Shift Boundary');
   await expect(page.getByLabel('Calendar legend')).toContainText('Shift 3 (22:00–06:00)');
@@ -93,7 +95,7 @@ for(const corrected of [false,true])test(`Calendar legend, shift tooltip and rev
   await page.getByLabel('Shift filter',{exact:true}).selectOption('Shift 2');await expect(bar).toBeVisible();
   await page.getByLabel('Shift filter',{exact:true}).selectOption('All');
   const gap=page.locator('[data-testid=non-working-time][data-resource=WS_B][data-start="'+time('2026-10-02 10:00')+'"]');
-  await gap.hover();await expect(page.getByRole('tooltip')).toContainText('WS_B');await expect(page.getByRole('tooltip')).toContainText('Reason not recorded');
+  await gap.hover();await expect(page.getByRole('tooltip')).toContainText('WS_B');await expect(page.getByRole('tooltip')).toContainText('Reason not recorded in saved calendar');
   await expect(page.getByRole('tooltip')).toContainText('2026-10-02 10:30:00');
   const review=page.getByTestId('calendar-review');
   await expect(review).not.toHaveAttribute('open');
@@ -106,6 +108,12 @@ for(const corrected of [false,true])test(`Calendar legend, shift tooltip and rev
   await expect(review).toContainText('Saved-calendar overlap: OP_A');
   await expect(review.getByRole('region',{name:'Weekly-rule conflicts',exact:true})).toContainText('WS_A;OP_A');
   await expect(review).toContainText('2026-10-02 14:30:00');
-  await page.screenshot({path:'.tmp-verification/calendar-annotations.png'});
+  await page.screenshot({path:test.info().outputPath('calendar-annotations.png')});
   expect(await bar.getAttribute('data-start')).toBe(ops[0].startTime);expect(await bar.getAttribute('data-finish')).toBe(ops[0].finishTime);expect(calls).toEqual([]);
+});
+
+test('Calendar reason text preserves recorded reasons and labels missing metadata',()=>{
+  expect(calendarReason('Planned maintenance')).toBe('Planned maintenance');
+  expect(calendarReason('  Recorded reason  ')).toBe('  Recorded reason  ');
+  for(const reason of [undefined,'','   ']) expect(calendarReason(reason)).toBe('Reason not recorded in saved calendar');
 });

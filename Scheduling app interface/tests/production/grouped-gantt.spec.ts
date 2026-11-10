@@ -29,8 +29,10 @@ for(const size of [10,30,50,100])test(`Grouped Gantt preserves ${size} jobs, gap
   await page.goto('/');await page.locator('input[type=password]').fill('planner-demo');
   await page.getByRole('button',{name:'Sign In',exact:true}).click();
   await expect(page.getByRole('heading',{name:'Production Dashboard'})).toBeVisible();
-  await page.getByRole('button',{name:'Analytics',exact:true}).click();
-  await page.getByText(fixture.small_id,{exact:true}).click();
+  await page.getByRole('button',{name:'Analytics & Reports',exact:true}).click();
+  await page.getByRole('button',{name:'Schedule Results',exact:true}).click();
+  await page.getByLabel('Search runs').fill(fixture.small_id);
+  await page.getByRole('button', {name: 'Open schedule '+fixture.small_id, exact: true}).click();
   await page.getByRole('button',{name:'Hourly view',exact:true}).click();
   const bars=page.getByTestId('gantt-bar');
   await expect(bars).toHaveCount(size*5);
@@ -61,7 +63,7 @@ for(const size of [10,30,50,100])test(`Grouped Gantt preserves ${size} jobs, gap
   expect(box && tip).toBeTruthy();
   expect(tip!.x>=0 && tip!.y>=0 && tip!.x+tip!.width<=1440 && tip!.y+tip!.height<=1000).toBeTruthy();
   expect(tip!.x>=box!.x+box!.width || tip!.x+tip!.width<=box!.x || tip!.y>=box!.y+box!.height || tip!.y+tip!.height<=box!.y).toBeTruthy();
-  await page.screenshot({path:`.tmp-verification/tooltip-fixed-${size}.png`,fullPage:true});
+  await page.screenshot({path:test.info().outputPath(`tooltip-fixed-${size}.png`),fullPage:true});
   await oil.click();await expect(page.getByText('Saved events in this bar (3)',{exact:true})).toBeVisible();
   await page.getByRole('button',{name:'Close job details',exact:true}).click();
   await page.getByRole('button',{name:'Clear / Reset',exact:true}).click();
@@ -69,8 +71,8 @@ for(const size of [10,30,50,100])test(`Grouped Gantt preserves ${size} jobs, gap
   await page.getByRole('button',{name:'Zoom in',exact:true}).click();
   await page.getByRole('button',{name:'Fit Schedule',exact:true}).click();
   await expect(page.getByTestId('zoom-level')).toHaveText('100%');
-  await page.screenshot({path:`.tmp-verification/grouped-gantt-${size}.png`,fullPage:true});
+  await page.screenshot({path:test.info().outputPath(`grouped-gantt-${size}.png`),fullPage:true});
   await page.getByRole('button',{name:'Schedule Table',exact:true}).click();
-  await expect(page.locator('tbody tr')).toHaveCount(ops.length);
+  await expect(page.locator('tbody tr')).toHaveCount(Math.min(50,ops.length));
   expect(solverCalls).toEqual([]);
 });

@@ -1,12 +1,10 @@
 """Readable Excel export of persisted standardized results, without solver calls."""
 from io import BytesIO
-import json
-from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill
-from backend.services.schedule_service import get_run
+from backend.services.schedule_service import get_run, validate_saved_selection
 from backend.errors import AppError
 
 
@@ -22,10 +20,27 @@ def method_name(request):
     return "CP-SAT" if chosen[0]=="CP-SAT" else "MLPSO" if chosen[0]=="MLPSO" else "MILP (legacy)" if chosen[0]=="MILP" else "GA"
 
 
+def shift_label(start, finish):
+    """Label factory shifts intersecting [start, finish); availability is validated separately."""
+    labels = []
+    cursor = start
+    while True:
+        hour = cursor.hour
+        shift, boundary_hour = (1, 14) if 6 <= hour < 14 else (2, 22) if 14 <= hour < 22 else (3, 6)
+        labels.append(f"Shift {shift}")
+        boundary = cursor.replace(hour=boundary_hour, minute=0, second=0, microsecond=0)
+        if boundary <= cursor:
+            boundary += timedelta(days=1)
+        if boundary >= finish:
+            return " → ".join(labels)
+        cursor = boundary
+
+
 def export(run_id):
     run=get_run(run_id); result=run["result"]; selected=result.get("selected")
     if not selected or not selected.get("feasible"):
         raise AppError("NO_FEASIBLE_SCHEDULE","No validated schedule is available to export.",status=409)
+    validate_saved_selection(run)
     request=run.get("request",{}); settings=request.get("settings",{})
     algorithms=result.get("algorithms",[]) or [selected]
     limits=[]
@@ -36,14 +51,6 @@ def export(run_id):
             limits.append(f'SS Micro-GA Fast: {settings["micro_time_limit"]} seconds (shared search budget)')
         else: limits.append(f'{a["algorithm"]}: no wall-clock limit (iteration/decode budget)')
     jobs=set(request.get("job_ids",[])) or {j for o in selected["operations"] for j in o.get("jobIds",[o["jobId"]])}
-    # Shift lookup uses the immutable run snapshot, never the current edited input.
-    windows={}
-    try:
-        snapshot=json.loads(Path(run["instance_path"]).read_text(encoding="utf-8"))
-        for station,rows in snapshot.get("station_windows",snapshot.get("resource_windows",{})).items():
-            for w in rows: windows[station,w["window_id"]]=w.get("shift_id")
-    except (KeyError,OSError,ValueError):
-        pass
     wb=Workbook();summary=wb.active;summary.title="Schedule Summary"
     for row in [
         ["Field","Value"],["Run ID",run_id],["Selected scheduling method",method_name(request)],
@@ -62,9 +69,10 @@ def export(run_id):
     sheet.append(["Job ID","Product","Operation","Workstation","Start Time","Finish Time","Processing Time (min)","Shift","Status",
                   "Event ID","Event Type","Contributing Job IDs","Resource Units","Window ID"])
     for row_index,o in enumerate(selected["operations"],start=2):
+        start, finish = datetime.fromisoformat(o["startTime"]), datetime.fromisoformat(o["finishTime"])
         sheet.append([o["jobId"],o.get("product"),o["operation"],o["workstation"],
-            datetime.fromisoformat(o["startTime"]),datetime.fromisoformat(o["finishTime"]),o["processingMin"],
-            o.get("shift") or windows.get((o["workstation"],o.get("windowId"))) or "Unavailable",o["status"],
+            start,finish,o["processingMin"],
+            shift_label(start,finish),o["status"],
             o.get("eventId"),o.get("eventType"),";".join(o.get("jobIds",[o["jobId"]])),o.get("resourceUnits"),o.get("windowId")])
         for col in (5,6): sheet.cell(row_index,col).number_format="yyyy-mm-dd hh:mm:ss.000"
     comparison=wb.create_sheet("Algorithm Comparison")

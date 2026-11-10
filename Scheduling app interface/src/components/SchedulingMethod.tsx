@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react';
 import { post } from '../api';
-import { algorithmName } from '../algorithms';
 
 export interface MethodPreview {
   algorithms:string[]; routing_reason:string; valid:boolean;
@@ -55,9 +54,6 @@ export default function SchedulingMethod({jobCount,v5,value,onChange,disabled=fa
         </label>;
       })}
     </div>
-    {active==='Automatic'&&<div role="status" className="text-xs leading-relaxed text-[#1E3A8A] bg-[#EFF6FF] rounded-lg p-3 mt-4">
-      {!jobCount?'Select jobs to preview the automatic choice.':error?error:!preview?'Evaluating selected jobs and search budget...':<><p className="font-semibold">Automatically selected: {preview.algorithms.map(algorithmName).join(' + ')||'None available'}</p><p className="mt-1">Reason: {preview.routing_reason}</p><p className="mt-1 text-slate-500">Configured decision rules provide guidance, not proof that this is the best algorithm.</p></>}
-    </div>}
-    {active!=='Automatic'&&error&&<p role="alert" className="text-xs text-red-600 mt-3">{error}</p>}
+    {error&&<p role="alert" className="text-xs text-red-600 mt-3">{error}</p>}
   </section>;
 }

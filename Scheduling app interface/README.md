@@ -374,3 +374,59 @@ markers; details list all jobs. Zoom/fit keep true time proportions.
 V5 Excel uploads now use 60 days from the first staffed shift, matching the benchmark generator's `--horizon-days 60` default. The generator repeats the source staffed shift pattern and breaks; downtime is applied only at explicitly supplied timestamps. Job release/due dates, processing times and solver constraints are unchanged. Imported frozen JSON retains its supplied horizon.
 
 The existing 180-job Excel dataset was revised to end at 2026-11-30 06:00, retaining the original dataset and saved scheduling snapshots. Reload the app and start a new Scheduling selection to use the new default; Run Again on an old result intentionally retains the old request. A longer calendar does not guarantee that a heuristic finds a feasible schedule within its search budget.
+
+### V5 paired benchmark runner (2026-11-08)
+
+Use `backend.benchmark_v5` for SS Micro-GA Fast versus CP-SAT from **this App**.
+It calls the current `v5_adapter` functions directly. The older
+`backend.tests.benchmark_micro_stopping` helper only compares Micro-GA stopping
+configurations; external `run_experiments.py` copies are not this runner.
+
+Run from this project directory, supplying an existing **frozen V5 JSON** (not a
+schedule export or Excel workbook). Example command for a future experiment:
+
+```powershell
+.venv\Scripts\python.exe -B -m backend.benchmark_v5 --instance "path\to\frozen.json" --output-dir "benchmark-results\experiment-001" --seconds 300 --seeds 42 1051 2060 --repeats 1
+```
+
+The output directory must not exist. The runner never resumes, reuses cached
+results or overwrites existing experiments, even for identical configurations.
+It does not connect to the application database or regenerate the calendar.
+
+Protocol `paired-single-worker-search-cap-v1`:
+
+- Same exact frozen bytes/calendar/objective `MIN_CMAX_FINAL_2C` for both solvers.
+- One attempt per algorithm/seed, one CP-SAT worker, sequential execution;
+  algorithm order alternates between pairs. Same nominal search-time cap.
+- Other settings keep App defaults. Optional `--settings settings.json` accepts
+  a `SolverSettings` object, including Micro-GA epoch/decode/patience limits.
+  Seed, attempts, workers and both time limits are explicitly overridden by the
+  paired protocol; requested and effective settings are both recorded. App
+  defaults and persisted configuration are never changed.
+- This is **not equal end-to-end runtime or equal evaluation count**. Micro-GA
+  includes seed refinement in its cooperative search budget and may stop early
+  on another limit. CP-SAT applies the cap inside `Solve()`, excluding model
+  construction. Final reconstruction/validation adds elapsed time.
+- `--repeats 2` repeats each seed for reproducibility checks. Wall-clock-limited
+  searches can differ between repetitions even with a fixed seed.
+
+Artifacts: exact input copy `frozen.json`; `manifest.json` with input/calendar
+hashes, full effective settings, solver signature defaults, backend source
+hashes, Git revision/status, package/Python/platform versions and protocol;
+per-attempt logs and JSON with raw plus validated results; `results.json` with
+paired comparisons; `results.csv` with per-attempt metrics. GA evaluations and
+seed-refinement decodes are separate. CP-SAT evaluations are null (not comparable
+to GA decoder calls); branches/conflicts are recorded instead. CP-SAT's exact
+non-optimal stopping cause is not exposed by the adapter, so the runner records
+solver status and marks the cause unknown rather than assuming timeout.
+
+Gap to the CP optimum is reported only when both results pass validation and
+the CP incumbent equals its lower bound. Otherwise the runner reports only a
+difference to the CP feasible incumbent, or null when comparison is unavailable.
+Changing frozen input or backend source during an experiment aborts comparison.
+Missing metrics remain null. Use a new output directory and a fresh Python
+process after any code/configuration changes.
+
+Small smoke tests have been run; no official long benchmark was executed.
+See [runner verification report](SCHEDULING_BENCHMARK_RUNNER_REPORT.md) for evidence
+and limitations before planning thesis experiments.

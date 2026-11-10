@@ -13,8 +13,10 @@ test('Saved MILP Gantt: labels, colors, search, details, filters, zoom, sticky a
   const result=await(await request.get('/api/schedules/'+fixture.small_id+'/result',{headers})).json();
   const ops=result.selected.operations;
   const calendar=await(await request.get('/api/calendar?dataset_id='+result.request.dataset_id,{headers})).json();
-  await page.getByRole('button',{name:'Analytics',exact:true}).click();
-  await page.getByText(fixture.small_id,{exact:true}).click();
+  await page.getByRole('button',{name:'Analytics & Reports',exact:true}).click();
+  await page.getByRole('button',{name:'Schedule Results',exact:true}).click();
+  await page.getByLabel('Search runs').fill(fixture.small_id);
+  await page.getByRole('button', {name: 'Open schedule '+fixture.small_id, exact: true}).click();
   await page.getByRole('button',{name:'Hourly view',exact:true}).click();
   const bars=page.getByTestId('gantt-bar');
   await expect(bars).toHaveCount(100);
@@ -47,7 +49,8 @@ test('Saved MILP Gantt: labels, colors, search, details, filters, zoom, sticky a
   await expect(page.locator('tbody tr')).toHaveCount(10);
   await expect(page.getByLabel('Table Job filter')).toHaveValue('J001');
   await page.getByLabel('Table Job filter').selectOption('All');
-  await expect(page.locator('tbody tr')).toHaveCount(100);
+  await expect(page.locator('tbody tr')).toHaveCount(50);
+  await expect(page.getByTestId('operation-table')).toContainText('100 / 100 operations');
   await page.getByRole('button',{name:'Gantt View',exact:true}).click();
   await page.getByRole('button',{name:'Hourly view',exact:true}).click();
   for(const [name,field] of [['Job','jobId'],['Workstation','workstation'],['Operation','operation']] as const){
@@ -77,7 +80,7 @@ test('Saved MILP Gantt: labels, colors, search, details, filters, zoom, sticky a
   for(let i=0;i<3;i++)await page.getByRole('button',{name:'Zoom in',exact:true}).click();
   await expect(page.getByRole('button',{name:'Zoom in',exact:true})).toBeDisabled();
   await scroller.evaluate(el=>{el.scrollLeft=0;});
-  await page.screenshot({path:'.tmp-verification/gantt-labels-zoomed.png',fullPage:true});
+  await page.screenshot({path:test.info().outputPath('gantt-labels-zoomed.png'),fullPage:true});
   const labels=await bars.evaluateAll(nodes=>nodes.map(n=>({label:n.textContent,width:n.clientWidth,scroll:n.scrollWidth})));
   expect(labels.some(n=>n.label?.includes(' · '))).toBeTruthy();
   expect(labels.every(n=>!n.label||n.scroll<=n.width)).toBeTruthy();
@@ -88,14 +91,16 @@ test('Saved MILP Gantt: labels, colors, search, details, filters, zoom, sticky a
   expect(await scroller.evaluate(el=>el.scrollLeft)).toBe(0);
   expect(await scroller.evaluate(el=>el.scrollWidth-el.clientWidth)).toBeLessThanOrEqual(1);
   expect((await page.getByTestId('axis-tick').allTextContents()).every(t=>/^\d{2}:(00|30)$/.test(t))).toBeTruthy();
-  await page.screenshot({path:'.tmp-verification/gantt-improved.png',fullPage:true});
+  await page.screenshot({path:test.info().outputPath('gantt-improved.png'),fullPage:true});
   await page.getByRole('button',{name:'Algorithm Comparison',exact:true}).click();
   await expect(page.locator('tbody tr')).toHaveCount(1);
   await page.getByRole('button',{name:'Gantt View',exact:true}).click();
   await page.getByRole('button',{name:'Hourly view',exact:true}).click();
   await page.reload();
-  await page.getByRole('button',{name:'Analytics',exact:true}).click();
-  await page.getByText(fixture.small_id,{exact:true}).click();
+  await page.getByRole('button',{name:'Analytics & Reports',exact:true}).click();
+  await page.getByRole('button',{name:'Schedule Results',exact:true}).click();
+  await page.getByLabel('Search runs').fill(fixture.small_id);
+  await page.getByRole('button', {name: 'Open schedule '+fixture.small_id, exact: true}).click();
   await expect(bars).toHaveCount(100);
   expect(await bars.evaluateAll(nodes=>nodes.map(n=>({job:n.getAttribute('data-job'),color:(n as HTMLElement).style.backgroundColor})))).toEqual(colors);
   expect(optimization).toEqual([]);

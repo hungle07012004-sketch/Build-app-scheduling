@@ -16,8 +16,10 @@ for(const copies of [1,2]) test(`Large Gantt navigation and full calendar (${112
   await page.goto('/');await page.locator('input[type=password]').fill('planner-demo');
   await page.getByRole('button',{name:'Sign In',exact:true}).click();
   await expect(page.getByRole('heading',{name:'Production Dashboard'})).toBeVisible();
-  await page.getByRole('button',{name:'Analytics',exact:true}).click();
-  await page.getByText(fixture.small_id,{exact:true}).click();
+  await page.getByRole('button',{name:'Analytics & Reports',exact:true}).click();
+  await page.getByRole('button',{name:'Schedule Results',exact:true}).click();
+  await page.getByLabel('Search runs').fill(fixture.small_id);
+  await page.getByRole('button', {name: 'Open schedule '+fixture.small_id, exact: true}).click();
   const scroll=page.getByTestId('gantt-scroll'),bars=page.getByTestId('gantt-bar');
   await expect(page.getByTestId('operation-count')).toHaveText(`${ops.length} / ${ops.length} operations`);
   const earliest=ops.reduce((a:any,b:any)=>stamp(a.startTime)<stamp(b.startTime)?a:b);
@@ -31,7 +33,7 @@ for(const copies of [1,2]) test(`Large Gantt navigation and full calendar (${112
   const windowEnd=Number(await scroll.getAttribute('data-domain-end'));
   const displayedIds=await bars.evaluateAll(ns=>ns.flatMap(n=>JSON.parse(n.getAttribute('data-event-ids')!)));
   for(const o of ops.filter((o:any)=>stamp(o.startTime)<windowEnd&&stamp(o.finishTime)>domain))expect(displayedIds).toContain(o.eventId);
-  await page.screenshot({path:`.tmp-verification/large-gantt-initial-${copies}.png`});
+  await page.screenshot({path:test.info().outputPath(`large-gantt-initial-${copies}.png`)});
   // Choose a job whose first event is late in the schedule.
   const firstByJob=new Map<string,number>();
   for(const o of ops)for(const id of o.jobIds||[o.jobId])firstByJob.set(id,Math.min(firstByJob.get(id)??Infinity,stamp(o.startTime)));
@@ -57,7 +59,7 @@ for(const copies of [1,2]) test(`Large Gantt navigation and full calendar (${112
   expect(Number(await scroll.getAttribute('data-domain-start'))).toBeLessThanOrEqual(stamp(saved.request.horizon_start));
   expect(await bars.evaluateAll(ns=>ns.reduce((n,el)=>n+Number(el.getAttribute('data-event-count')),0))).toBe(ops.length);
   expect((await page.getByTestId('axis-tick').allTextContents()).some(s=>/Oct|Nov/.test(s))).toBe(true);
-  await page.screenshot({path:`.tmp-verification/large-gantt-fit-${copies}.png`});
+  await page.screenshot({path:test.info().outputPath(`large-gantt-fit-${copies}.png`)});
   await page.getByRole('button',{name:'Hourly view',exact:true}).click();
   await expect(first).toBeInViewport();
   expect(JSON.stringify(ops)).toBe(original);expect(calls).toEqual([]);

@@ -6,12 +6,18 @@ const calendar=JSON.parse(readFileSync('.tmp-verification/large-gantt-calendar.j
 
 async function openResult(page:Page,result=saved) {
   await page.route('**/api/schedules/'+fixture.small_id+'/result',r=>r.fulfill({json:result}));
+  // The replay run is not in the isolated database; keep its read-only export
+  // validation response consistent with the mocked result. Real validation is
+  // covered by validation-export.spec.ts and backend V5 regression tests.
+  await page.route('**/api/schedules/'+result.run_id+'/result?validate_export=true',r=>r.fulfill({json:result}));
   await page.route('**/api/calendar?run_id=*',r=>r.fulfill({json:calendar}));
   await page.goto('/');await page.locator('input[type=password]').fill('planner-demo');
   await page.getByRole('button',{name:'Sign In',exact:true}).click();
   await expect(page.getByRole('heading',{name:'Production Dashboard'})).toBeVisible();
-  await page.getByRole('button',{name:'Analytics',exact:true}).click();
-  await page.getByText(fixture.small_id,{exact:true}).click();
+  await page.getByRole('button',{name:'Analytics & Reports',exact:true}).click();
+  await page.getByRole('button',{name:'Schedule Results',exact:true}).click();
+  await page.getByLabel('Search runs').fill(fixture.small_id);
+  await page.getByRole('button', {name: 'Open schedule '+fixture.small_id, exact: true}).click();
   await expect(page.getByTestId('operation-count')).toHaveText(`${result.selected.operations.length} / ${result.selected.operations.length} operations`);
 }
 const geometry=(page:Page)=>page.getByTestId('gantt-row').evaluateAll(nodes=>nodes.map(n=>n.getBoundingClientRect().height));
@@ -24,8 +30,9 @@ test('Compact summary and large Gantt layout modes preserve data, actions and na
   const summary=page.getByTestId('result-summary'), details=page.getByTestId('result-details');
   expect((await summary.boundingBox())!.height).toBeLessThanOrEqual(200);
   await expect(details).not.toHaveAttribute('open','');
-  for(const label of ['Selected Method','Makespan','Total Tardiness','Computation Time','Scheduled Jobs','Status'])await expect(summary.getByText(label,{exact:true})).toBeVisible();
+  for(const label of ['Makespan','Tardy Jobs','Total Flow Time','Computation Time'])await expect(summary.getByText(label,{exact:true}).first()).toBeVisible();
   await details.locator('summary').click();
+  for(const label of ['Selected Method','Total Tardiness','Scheduled Jobs','Status'])await expect(details.getByText(label,{exact:true})).toBeVisible();
   await expect(details).toContainText(saved.run_id);
   await expect(details.getByText(/Calendar used:/)).toBeVisible();
   await details.locator('summary').click();
@@ -37,7 +44,7 @@ test('Compact summary and large Gantt layout modes preserve data, actions and na
   await expect(page.getByRole('heading',{name:'Accept this production schedule?'})).toBeVisible();
   await page.getByRole('button',{name:'Cancel',exact:true}).click();
   const normal=await geometry(page);
-  await page.screenshot({path:'.tmp-verification/layout-normal.png'});
+  await page.screenshot({path:test.info().outputPath('layout-normal.png')});
   await page.getByRole('button',{name:'Compact View',exact:true}).click();
   expect((await geometry(page)).every((h,i)=>h<=normal[i])).toBe(true);
   const scroll=page.getByTestId('gantt-scroll');
@@ -56,7 +63,7 @@ test('Compact summary and large Gantt layout modes preserve data, actions and na
   await page.getByRole('button',{name:'Legend',exact:true}).click();
   await expect(page.getByLabel('Job color legend',{exact:true})).toBeHidden();
   await expect(page.getByTestId('calendar-review')).not.toHaveAttribute('open','');
-  await page.screenshot({path:'.tmp-verification/layout-expanded-fit.png'});
+  await page.screenshot({path:test.info().outputPath('layout-expanded-fit.png')});
   await page.keyboard.press('Escape');
   await expect(page.getByRole('button',{name:'Expand Gantt',exact:true})).toBeVisible();
   await page.getByRole('button',{name:'Filters',exact:true}).click();
@@ -101,7 +108,7 @@ test('Fit Height shows 15 workstation rows on desktop with 20000 unchanged event
   await page.getByRole('button',{name:'Fit Schedule',exact:true}).click();
   const displayed=await page.getByTestId('gantt-bar').evaluateAll(ns=>ns.map(n=>[JSON.parse(n.getAttribute('data-event-ids')!)[0],n.getAttribute('data-start'),n.getAttribute('data-finish'),Number(n.getAttribute('data-processing'))]).sort());
   expect(displayed).toEqual(ops.map(o=>[o.eventId,o.startTime,o.finishTime,o.processingMin]).sort());
-  await page.screenshot({path:'.tmp-verification/layout-15-stations.png'});
+  await page.screenshot({path:test.info().outputPath('layout-15-stations.png')});
 });
 
 test('Compact result keeps Excel download and Run Again / Accept / Apply callbacks',async({page,request})=>{
@@ -115,8 +122,10 @@ test('Compact result keeps Excel download and Run Again / Accept / Apply callbac
   await page.route('**/api/schedules/'+fixture.small_id+'/result',r=>r.fulfill({json:replay}));
   await page.route('**/api/input/current',async r=>{const response=await r.fetch();await r.fulfill({json:{...await response.json(),id:original.request.dataset_id}});});
   await page.reload();
-  await page.getByRole('button',{name:'Analytics',exact:true}).click();
-  await page.getByText(fixture.small_id,{exact:true}).click();
+  await page.getByRole('button',{name:'Analytics & Reports',exact:true}).click();
+  await page.getByRole('button',{name:'Schedule Results',exact:true}).click();
+  await page.getByLabel('Search runs').fill(fixture.small_id);
+  await page.getByRole('button', {name: 'Open schedule '+fixture.small_id, exact: true}).click();
   const download=page.waitForEvent('download');
   await page.getByRole('button',{name:'Export Results to Excel',exact:true}).click();
   expect((await download).suggestedFilename()).toContain('AL13_Schedule_'+fixture.small_id);

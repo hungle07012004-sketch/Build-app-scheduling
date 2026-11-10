@@ -1,25 +1,35 @@
+import {runLabel,shortRunContext} from '../runLabels';
 import { algorithmName } from '../algorithms';
+import { useState } from 'react';
+import { Plus, Layers, Cpu, ArrowUpRight } from 'lucide-react';
+import { Panel, MetricCard, metric } from '../components/aps';
+import RunHistory, {runContext} from '../components/RunHistory';
+import { MakespanTrend } from './AnalyticsPage';
 import { useAppData } from '../AppData';
+import { WorkstationData } from '../data';
 import StatusChip from '../components/StatusChip';
-import { TrendingUp, AlertCircle, CheckCircle2, Clock, Play, CalendarPlus } from 'lucide-react';
+import { AlertCircle, Clock } from 'lucide-react';
 
 interface DashboardPageProps {
   onCreateSchedule: () => void;
+  onViewResults: () => void;
 }
 
 // Simple SVG bar chart
-function UtilizationBar({ value, label }: { value: number; label: string }) {
-  const color = value > 85 ? '#EF4444' : value > 65 ? '#F59E0B' : '#10B981';
+function UtilizationBar({ value, label }: { value: number | null; label: string }) {
+  const color = 'linear-gradient(90deg, #FF7900, #F5C542)';
   return (
-    <div className="flex items-center gap-3">
-      <div className="w-12 text-xs text-[#64748B] text-right flex-shrink-0">{label}</div>
-      <div className="flex-1 h-5 bg-slate-100 rounded-full overflow-hidden">
+    <div className="min-w-0">
+      <div className="flex items-start justify-between gap-3 mb-1">
+        <div className="min-w-0 break-words text-xs text-[#64748B]" title={label}>{label}</div>
+        <div className="shrink-0 text-xs font-semibold text-[#0F172A] text-right tabular-nums">{value === null ? '\u2014' : `${value.toFixed(2)}%`}</div>
+      </div>
+      <div className="h-5 bg-slate-100 rounded-full overflow-hidden">
         <div
           className="h-full rounded-full transition-all"
-          style={{ width: `${value}%`, backgroundColor: color }}
+          style={{ width: `${value ?? 0}%`, background: color }}
         />
       </div>
-      <div className="w-10 text-xs font-semibold text-[#0F172A] text-right">{value}%</div>
     </div>
   );
 }
@@ -73,158 +83,52 @@ function DonutChart({ data }: { data: { label: string; value: number; color: str
   );
 }
 
-function KPICard({ label, value, sub, icon: Icon, color }: {
-  label: string; value: string; sub?: string; icon: any; color: string;
-}) {
-  return (
-    <div className="bg-white rounded-xl border border-slate-200 p-5">
-      <div className="flex items-start justify-between mb-3">
-        <div className={`w-9 h-9 rounded-lg flex items-center justify-center`} style={{ backgroundColor: color + '18' }}>
-          <Icon size={18} style={{ color }} />
-        </div>
-      </div>
-      <div className="text-2xl font-bold text-[#0F172A]">{value}</div>
-      <div className="text-sm text-[#64748B] mt-0.5">{label}</div>
-      {sub && <div className="text-xs text-[#94A3B8] mt-1">{sub}</div>}
+export default function DashboardPage({ onCreateSchedule, onViewResults }: DashboardPageProps) {
+  const {jobs:JOBS,overview,dataset}=useAppData();
+  const [range,setRange]=useState('All');
+  const accepted=!!overview.latest_accepted_schedule;
+  const chosen=(overview.algorithms||[]).find((r:any)=>r.algorithm===overview.solver);
+  const history:any[]=overview.history||[];
+  const now=Date.now();
+  const recent=history.filter(r=>range==='All'||now-new Date(r.created_at).getTime()<=Number(range)*86400000);
+  const trend=recent.slice(0,12).reverse().map(r=>({id:r.id,value:r.makespan,key:r.comparison_key,context:runContext(r),label:runLabel(r),summary:algorithmName(r.algo)+' | '+shortRunContext(r)}));
+  const statuses=[['Completed','#10b981'],['In Progress','#2563eb'],['Scheduled','#8b5cf6'],['Unscheduled','#f59e0b'],['Delayed','#ef4444']].map(([label,color])=>({label,color,value:JOBS.filter(j=>j.status===label).length}));
+  const upcoming=JOBS.filter(j=>['Unscheduled','Scheduled'].includes(j.status)).slice(0,5);
+  const executionProgress=typeof overview.completed_jobs==='number'&&Number.isFinite(overview.completed_jobs)&&typeof overview.scheduled_jobs==='number'&&Number.isFinite(overview.scheduled_jobs)&&overview.scheduled_jobs>0&&overview.completed_jobs>=0&&overview.completed_jobs<=overview.scheduled_jobs
+    ? 100*overview.completed_jobs/overview.scheduled_jobs : null;
+  return <div className="flex-1 min-w-0 overflow-y-auto"><div className="aps-page industrial-dashboard">
+    <header className="cinematic-hero">
+      <div className="cinematic-hero-photo" aria-hidden="true"/>
+      <div className="cinematic-hero-content"><p className="industrial-eyebrow">SMART PRODUCTION APS / AL13 V5</p><h1 aria-label="Production Dashboard"><span>Production</span><br/>Scheduling Platform</h1><p className="cinematic-hero-description">Optimize production with exact and metaheuristic algorithms for complex manufacturing environments.</p><div className="flex flex-wrap gap-3 mt-5"><button className="aps-primary" aria-label="Create Schedule" onClick={onCreateSchedule}><Plus size={17}/>New Scheduling Run</button><button className="aps-secondary" onClick={onViewResults}>View Recent Results<ArrowUpRight size={16}/></button></div></div>
+    </header>
+    <div className="industrial-dashboard-kpis grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 mb-5">
+      <MetricCard label="Total Jobs" value={metric(dataset?JOBS.length:null,0)} source="Current dataset" icon={Layers} tone="orange"/>
+      <MetricCard label="Makespan (Cmax)" value={<>{metric(accepted?overview.makespan_min:null)} <small className="text-sm font-medium">min</small></>} source="Latest accepted plan" icon={Clock} tone="green"/>
+      <MetricCard label="Tardy Jobs" value={metric(accepted?overview.tardy_jobs:null,0)} source="Latest accepted plan · diagnostic" icon={AlertCircle} tone="amber"/>
+      <MetricCard label="Solver" value={<span className="text-lg">{accepted?algorithmName(overview.solver):'—'}</span>} source={accepted?(chosen?.proven_optimal?'Optimality proven':chosen?.feasible?'Feasible · optimality not proven':'Status not recorded'):'No accepted schedule'} icon={Cpu} tone="purple"/>
     </div>
-  );
-}
-
-export default function DashboardPage({ onCreateSchedule }: DashboardPageProps) {
-  const {jobs:JOBS,workstations:WORKSTATIONS_DATA,overview} = useAppData();
-  const byStatus = (s: string) => JOBS.filter(j => j.status === s).length;
-  const total = JOBS.length;
-  const avgUtil = Math.round(WORKSTATIONS_DATA.reduce((s, w) => s + w.utilization, 0) / (WORKSTATIONS_DATA.length || 1));
-
-  const recentActivity = (overview.history || []).slice(0,5).map((r:any)=>({time:new Date(r.created_at).toLocaleString(),msg:algorithmName(r.algo)+' completed · Makespan '+r.makespan.toFixed(2)+' min',type:'success'}));
-
-  const donutData = [
-    { label: 'Unscheduled', value: byStatus('Unscheduled'), color: '#94A3B8' },
-    { label: 'Scheduled', value: byStatus('Scheduled'), color: '#3B82F6' },
-    { label: 'In Progress', value: byStatus('In Progress'), color: '#F59E0B' },
-    { label: 'Completed', value: byStatus('Completed'), color: '#10B981' },
-    { label: 'Delayed', value: byStatus('Delayed'), color: '#EF4444' },
-  ];
-
-  const upcomingJobs = JOBS.filter(j => j.status === 'Unscheduled' || j.status === 'Scheduled').slice(0, 5);
-
-  return (
-    <div className="flex-1 overflow-y-auto bg-[#F8FAFC]">
-      <div className="max-w-7xl mx-auto px-6 py-6">
-        {/* Header */}
-        <div className="flex items-start justify-between mb-6">
-          <div>
-            <h1 className="text-xl font-bold text-[#0F172A]">Production Dashboard</h1>
-            <p className="text-sm text-[#64748B] mt-0.5">{new Date().toLocaleDateString()} · Latest accepted schedule</p>
-          </div>
-          <button
-            onClick={onCreateSchedule}
-            className="flex items-center gap-2 px-4 py-2.5 bg-[#2563EB] hover:bg-[#1D4ED8] text-white text-sm font-semibold rounded-lg transition-all shadow-sm"
-          >
-            <CalendarPlus size={16} />
-            Create Schedule
-          </button>
+    <p className="text-[11px] text-slate-500 mb-5 break-words">{accepted?<span title={overview.latest_accepted_schedule}>Accepted plan {overview.latest_accepted_schedule.slice(0,8)}… · {overview.accepted_applied?'Applied':'Not applied'} · Dataset {overview.accepted_dataset_id}</span>:'Accept a schedule to populate plan metrics.'} {dataset&&<span className="ml-2">Current data: {dataset.filename}</span>}</p>
+    <div className="grid grid-cols-1 xl:grid-cols-3 gap-5 mb-5">
+      <Panel title="Workstation Utilization (Accepted plan)" subtitle="Planned load / saved available time. Not measured utilization.">
+        <div className="space-y-3 max-h-72 overflow-y-auto pr-2">{(overview.workstations||[]).map((ws:WorkstationData)=><UtilizationBar key={ws.id} label={ws.id} value={accepted&&typeof ws.utilization==='number'&&Number.isFinite(ws.utilization)?ws.utilization:null}/>)}</div>
+        {!overview.workstations?.length&&<p className="text-xs text-slate-500 py-10">No resource data available.</p>}
+      </Panel>
+      <Panel title="Makespan History" subtitle="Historical tracking, not a benchmark. Lines only connect matching input and settings." action={<select aria-label="History period" className="border border-slate-200 rounded text-xs p-1" value={range} onChange={e=>setRange(e.target.value)}><option value="All">All dates</option><option value="7">Last 7 days</option><option value="30">Last 30 days</option></select>}>
+        <MakespanTrend data={trend}/>
+      </Panel>
+      <Panel title="Job Status" subtitle="Current dataset · reported job status">
+        <DonutChart data={statuses}/>
+        <div className="mt-5 pt-4 border-t border-slate-100 text-xs text-slate-500">Execution across applied schedules: <strong className="text-slate-700">{metric(overview.completed_jobs,0)} / {metric(overview.scheduled_jobs,0)}</strong> completed.
+          {executionProgress!==null&&<div className="mt-3"><div className="flex justify-between gap-2 mb-2"><span>Reported production progress</span><strong>{metric(executionProgress)}%</strong></div><progress aria-label="Reported completion across applied schedules" className="industrial-progress" max={overview.scheduled_jobs} value={overview.completed_jobs}/></div>}
         </div>
-
-        {/* KPI Row */}
-        <div className="grid grid-cols-3 lg:grid-cols-6 gap-4 mb-6">
-          <KPICard label="Total Jobs" value={String(total)} icon={TrendingUp} color="#2563EB" />
-          <KPICard label="Unscheduled" value={String(byStatus('Unscheduled'))} icon={Clock} color="#64748B" />
-          <KPICard label="Scheduled" value={String(byStatus('Scheduled'))} icon={CalendarPlus} color="#3B82F6" />
-          <KPICard label="In Progress" value={String(byStatus('In Progress'))} icon={Play} color="#F59E0B" />
-          <KPICard label="Completed" value={String(byStatus('Completed'))} icon={CheckCircle2} color="#10B981" />
-          <KPICard label="Delayed" value={String(byStatus('Delayed'))} icon={AlertCircle} color="#EF4444" />
-        </div>
-
-        {/* Secondary KPIs */}
-        <div className="grid grid-cols-3 gap-4 mb-6">
-          <div className="bg-white rounded-xl border border-slate-200 p-5 flex items-center gap-4">
-            <div className="w-10 h-10 rounded-lg bg-[#EFF6FF] flex items-center justify-center">
-              <TrendingUp size={20} className="text-[#2563EB]" />
-            </div>
-            <div>
-              <div className="text-2xl font-bold text-[#0F172A]">{overview.makespan_min?.toFixed(2) ?? '\u2014'} <span className="text-sm font-normal text-[#64748B]">min</span></div>
-              <div className="text-sm text-[#64748B]">Current Makespan</div>
-            </div>
-          </div>
-          <div className="bg-white rounded-xl border border-slate-200 p-5 flex items-center gap-4">
-            <div className="w-10 h-10 rounded-lg bg-[#ECFDF5] flex items-center justify-center">
-              <CheckCircle2 size={20} className="text-[#10B981]" />
-            </div>
-            <div>
-              <div className="text-2xl font-bold text-[#0F172A]">{avgUtil}%</div>
-              <div className="text-sm text-[#64748B]">Avg. Workstation Util.</div>
-            </div>
-          </div>
-          <div className="bg-white rounded-xl border border-slate-200 p-5 flex items-center gap-4">
-            <div className="w-10 h-10 rounded-lg bg-[#FEF3C7] flex items-center justify-center">
-              <Clock size={20} className="text-[#F59E0B]" />
-            </div>
-            <div>
-              <div className="text-2xl font-bold text-[#0F172A]">{overview.tardy_jobs ?? '\u2014'}</div>
-              <div className="text-sm text-[#64748B]">Tardy Jobs (Plan)</div>
-            </div>
-          </div>
-        </div>
-
-        {/* Charts Row */}
-        <div className="grid grid-cols-2 gap-6 mb-6">
-          {/* Job Status Donut */}
-          <div className="bg-white rounded-xl border border-slate-200 p-5">
-            <h3 className="font-semibold text-[#0F172A] text-sm mb-4">Job Status Distribution</h3>
-            <DonutChart data={donutData} />
-          </div>
-
-          {/* Workstation Utilization */}
-          <div className="bg-white rounded-xl border border-slate-200 p-5">
-            <h3 className="font-semibold text-[#0F172A] text-sm mb-4">Workstation Utilization</h3>
-            <div className="space-y-2.5">
-              {WORKSTATIONS_DATA.slice(0, 6).map(ws => (
-                <UtilizationBar key={ws.id} label={ws.id} value={ws.utilization} />
-              ))}
-            </div>
-          </div>
-        </div>
-
-        {/* Bottom Row */}
-        <div className="grid grid-cols-2 gap-6">
-          {/* Upcoming Jobs */}
-          <div className="bg-white rounded-xl border border-slate-200 p-5">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="font-semibold text-[#0F172A] text-sm">Upcoming Jobs</h3>
-              <span className="text-xs text-[#64748B]">Next 5</span>
-            </div>
-            <div className="space-y-2">
-              {upcomingJobs.map(job => (
-                <div key={job.id} className="flex items-center gap-3 py-1.5">
-                  <span className="font-mono text-xs font-semibold text-[#2563EB] w-12">{job.id}</span>
-                  <span className="flex-1 text-sm text-[#0F172A] truncate">{job.product}</span>
-                  <StatusChip status={job.priority} dot={false} />
-                  <StatusChip status={job.status} />
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Recent Activity */}
-          <div className="bg-white rounded-xl border border-slate-200 p-5">
-            <h3 className="font-semibold text-[#0F172A] text-sm mb-4">Recent Activity</h3>
-            <div className="space-y-3">
-              {recentActivity.map((a: {time:string;msg:string;type:string}, i:number) => (
-                <div key={i} className="flex gap-3">
-                  <div className={`w-1.5 h-1.5 rounded-full mt-1.5 flex-shrink-0 ${
-                    a.type === 'success' ? 'bg-emerald-500' : a.type === 'warning' ? 'bg-amber-500' : 'bg-[#2563EB]'
-                  }`} />
-                  <div>
-                    <p className="text-sm text-[#0F172A] leading-snug">{a.msg}</p>
-                    <p className="text-xs text-[#94A3B8] mt-0.5">{a.time}</p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      </div>
+      </Panel>
     </div>
-  );
+    <Panel title="Recent Scheduling Runs" subtitle="Completed does not mean accepted or applied. Run times use finished_at when recorded.">
+      <RunHistory rows={history.slice(0,5)}/>
+    </Panel>
+    <details className="aps-panel mt-5"><summary className="p-4 text-sm font-semibold">Upcoming Jobs & Recent Activity</summary><div className="grid md:grid-cols-2 gap-6 p-5 pt-0">
+      <div><h3 className="text-xs font-semibold mb-3">Upcoming jobs · current dataset</h3>{upcoming.map(j=><div key={j.id} className="flex justify-between border-t border-slate-100 py-2 text-xs"><span>{j.id} · {j.product}</span><span>{j.dueDate}</span><StatusChip status={j.status}/></div>)}</div>
+      <div data-testid="recent-activity"><h3 className="text-xs font-semibold mb-3">Recent Activity</h3>{history.slice(0,5).map(r=><p key={r.id} className="text-xs py-2 border-t border-slate-100">{algorithmName(r.algo)} · {r.status} · {r.finished_at?'Finished: '+new Date(r.finished_at).toLocaleString():'Created: '+(r.created_at?new Date(r.created_at).toLocaleString():'Not recorded')} · Makespan {metric(r.makespan)} min</p>)}</div>
+    </div></details>
+  </div></div>;
 }

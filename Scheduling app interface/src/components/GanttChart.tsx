@@ -2,13 +2,14 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { STAGES, JOB_COLORS, taskJobIds, type GanttTask, type Job } from '../data';
 import { layoutOperations, operationLabel, type VisualOperation } from './ganttLayout';
 import { ZoomIn, ZoomOut, X } from 'lucide-react';
-import {indexCalendar, operationShifts, shiftNames, shiftHours, calendarTime, weeklyShutdowns, type CalendarWindow, type CalendarCheck} from './ganttCalendar';
+import {calendarReason, indexCalendar, operationShifts, shiftNames, shiftHours, calendarTime, weeklyShutdowns, type CalendarWindow, type CalendarCheck} from './ganttCalendar';
 
 export type {CalendarWindow} from './ganttCalendar';
 interface Props {
   tasks?: GanttTask[]; jobs?: Job[]; calendar?: CalendarWindow[];
   horizonStart?: string; horizonEnd?: string;
   calendarPolicy?: string;
+  initialJob?: string;
   onViewJob?: (id: string) => void;
 }
 type ColorMode = 'Job' | 'Operation' | 'Status';
@@ -31,12 +32,15 @@ function textColor(bg: string) {
   return rgb[0]*0.2126+rgb[1]*0.7152+rgb[2]*0.0722 > 0.179 ? '#0F172A' : '#FFFFFF';
 }
 const selectClass = 'border border-slate-200 rounded-md bg-white px-2 py-1 text-xs text-slate-700 max-w-36';
-export default function GanttChart({tasks=[],jobs=[],calendar=[],horizonStart,horizonEnd,calendarPolicy,onViewJob}: Props) {
+export default function GanttChart({tasks=[],jobs=[],calendar=[],horizonStart,horizonEnd,calendarPolicy,onViewJob,initialJob=''}: Props) {
+  const [groupBy,setGroupBy]=useState<'Workstation'|'Job'>('Workstation');
+  const [resource,setResource]=useState('All');
+  const resourceIds=(t:GanttTask)=>[...new Set([t.workstation,...(t.resourceUnits||'').split(/[;,|]/).map(s=>s.trim()).filter(Boolean)])];
   const [zoom,setZoom] = useState(1);
   const [hourView,setHourView] = useState(false);
   const [viewDays,setViewDays] = useState<1|3|7|null>(1);
   const [viewDate,setViewDate] = useState<number|null>(null);
-  const [search,setSearch] = useState('');
+  const [search,setSearch] = useState(initialJob);
   const [mode,setMode] = useState<ColorMode>('Job');
   const [filters,setFilters] = useState({Job:'All',Workstation:'All',Operation:'All',Shift:'All'});
   const [selected,setSelected] = useState<VisualOperation|null>(null);
@@ -124,7 +128,7 @@ export default function GanttChart({tasks=[],jobs=[],calendar=[],horizonStart,ho
     ...(t.members?[['Saved events',String(t.members.length)],['Event / batch IDs',(t.members.slice(0,6).map(m=>m.eventId).filter(Boolean).join(', ')||'Unavailable')+(t.members.length>6?' (more in details)':'')]]:[]),
   ];
   const options=useMemo(()=>({Job:unique(tasks.flatMap(taskJobIds)),Workstation:unique(tasks.map(t=>t.workstation)),Operation:unique(tasks.map(t=>t.operation)),Shift:unique([...shiftNames,...tasks.map(shift)])}),[tasks,windowFor]);
-  const visible=useMemo(()=>tasks.filter(t=>(filters.Job==='All'||taskJobIds(t).includes(filters.Job))&&(filters.Workstation==='All'||t.workstation===filters.Workstation)&&(filters.Operation==='All'||t.operation===filters.Operation)&&(filters.Shift==='All'||(shiftNames.includes(filters.Shift)?shiftSequence(t).some(i=>shiftNames[i]===filters.Shift):shift(t)===filters.Shift))),[tasks,filters,calendar]);
+  const visible=useMemo(()=>tasks.filter(t=>(resource==='All'||resourceIds(t).includes(resource))&&(filters.Job==='All'||taskJobIds(t).includes(filters.Job))&&(filters.Workstation==='All'||t.workstation===filters.Workstation)&&(filters.Operation==='All'||t.operation===filters.Operation)&&(filters.Shift==='All'||(shiftNames.includes(filters.Shift)?shiftSequence(t).some(i=>shiftNames[i]===filters.Shift):shift(t)===filters.Shift))),[tasks,filters,calendar,resource]);
   const review=useMemo(()=>{
     const records=visible.map(task=>({task,check:calendarIndex.check(task)}));
     return {records:records.filter(r=>r.check.overlaps.length||r.check.weekly.length||r.check.unchecked.length),
@@ -132,8 +136,8 @@ export default function GanttChart({tasks=[],jobs=[],calendar=[],horizonStart,ho
       partial:records.filter(r=>r.check.unchecked.length).length};
   },[visible,calendarIndex]);
   const weeklyCalendarConflicts=useMemo(()=>[...calendarIndex.byResource].filter(([,windows])=>windows.some(w=>weeklyShutdowns(w.start,w.end).length)).map(([resource])=>resource),[calendarIndex]);
-  const layout=useMemo(()=>layoutOperations(visible),[visible]);
-  const stages=useMemo(()=>unique(visible.map(t=>t.workstation)).sort((a,b)=>STAGES.indexOf(tasks.find(t=>t.workstation===a)!.operation)-STAGES.indexOf(tasks.find(t=>t.workstation===b)!.operation)||a.localeCompare(b)),[visible,tasks]);
+  const layout=useMemo(()=>layoutOperations(visible,groupBy),[visible,groupBy]);
+  const stages=useMemo(()=>[...layout.stations.keys()].sort((a,b)=>groupBy==='Job'?a.localeCompare(b,undefined,{numeric:true}):STAGES.indexOf(tasks.find(t=>t.workstation===a)!.operation)-STAGES.indexOf(tasks.find(t=>t.workstation===b)!.operation)||a.localeCompare(b)),[layout,tasks,groupBy]);
   const rowGeometry=useMemo(()=>{
     const dense=compact||fitHeight,barHeight=dense?26:36,lanePitch=dense?32:44;
     const target=fitHeight?Math.max(40,Math.min(48,Math.floor((viewportHeight-72)/Math.max(1,stages.length)))):44;
@@ -180,7 +184,7 @@ export default function GanttChart({tasks=[],jobs=[],calendar=[],horizonStart,ho
   const inViewport=(start:number,end:number)=>!virtualized || (end>=scrollLeft-viewport && start<=scrollLeft+viewport*2);
   const windowCount=useMemo(()=>visible.filter(t=>stamp(t.finishTime)>startMs && stamp(t.startTime)<endMs).length,[visible,startMs,endMs]);
   // Shade calendar gaps per workstation. Missing calendar data is not a day off.
-  const nonWorking=useMemo(()=>new Map(stages.map(station=>[station,calendarIndex.shading(station,startMs,endMs)])),[calendarIndex,stages,startMs,endMs]);
+  const nonWorking=useMemo(()=>new Map(stages.map(station=>[station,groupBy==='Workstation'?calendarIndex.shading(station,startMs,endMs):[]])),[calendarIndex,stages,startMs,endMs,groupBy]);
   function showDay(value:number,count:1|3|7=viewDays||1) {
     setViewDate(clampDay(value));setViewDays(count);setHourView(false);setZoom(1);setHover(null);
     zoomAnchor.current=null;scrollRef.current?.scrollTo({left:0});
@@ -211,10 +215,10 @@ export default function GanttChart({tasks=[],jobs=[],calendar=[],horizonStart,ho
     if(target && navigating) {
       if(viewDays && !(stamp(target.finishTime)>startMs && stamp(target.startTime)<endMs)) setViewDate(clampDay(stamp(target.startTime)));
       el.scrollLeft=Math.max(0,x(target.startTime)-24);
-      el.scrollTop=rowGeometry.rows.get(target.workstation)?.top||0;
+      el.scrollTop=rowGeometry.rows.get(groupBy==='Job'?taskJobIds(target)[0]:target.workstation)?.top||0;
     }
     setScrollLeft(el.scrollLeft);
-  },[tasks,search,filters,selected,selectedJob]);
+  },[tasks,search,filters,selected,selectedJob,groupBy]);
   useLayoutEffect(()=>{
     const el=scrollRef.current;if(!el) return;
     if(zoomAnchor.current!==null) {
@@ -264,9 +268,14 @@ export default function GanttChart({tasks=[],jobs=[],calendar=[],horizonStart,ho
     ['Due Date',job?.dueDate||'Unavailable'],
     ['Tardiness',Number.isFinite(dueMs)?number(Math.max(0,(completionMs-dueMs)/60000))+' min':'Unavailable'],
   ];
-  function reset() {setSearch('');setSelected(null);setFilters({Job:'All',Workstation:'All',Operation:'All',Shift:'All'});}
+  function reset() {setSearch('');setSelected(null);setResource('All');setFilters({Job:'All',Workstation:'All',Operation:'All',Shift:'All'});}
   const reviewIdentity=(task:GanttTask)=><div><button className="text-blue-600 underline" onClick={()=>{setSearch(taskJobIds(task)[0]);setSelected(null);showDay(stamp(task.startTime));}}>{task.jobId} · {task.operation} · {task.eventId}</button><span className="ml-2">{task.workstation} · {task.startTime} → {task.finishTime}</span></div>;
   return <div data-testid="gantt-chart" data-expanded={expanded} className={'flex flex-col min-h-0 bg-white '+(expanded?'fixed inset-0 z-40':'h-full')}>
+    <header className="flex shrink-0 flex-wrap items-center justify-between gap-2 px-4 py-2.5 border-b border-slate-200">
+      <h2 className="font-semibold text-sm">Gantt Chart — By {groupBy}</h2>
+      <div className="flex rounded-md border border-slate-200 p-0.5 text-xs">{(['Workstation','Job'] as const).map(g=><button key={g} aria-pressed={groupBy===g} onClick={()=>{setGroupBy(g);setHover(null);}} className="px-3 py-1 rounded aria-pressed:bg-blue-600 aria-pressed:text-white">By {g}</button>)}</div>
+      {groupBy==='Job'&&<p className="text-[10px] text-slate-500 w-full">Shared batches appear on each member Job row. Resource calendar shading is available in Workstation view; calendar checks remain in tooltips.</p>}
+    </header>
     <div className="shrink-0 max-h-[50%] overflow-y-auto">
     <div className="flex flex-wrap items-center gap-2 px-4 py-1.5 border-b border-slate-100 text-xs">
       <button disabled={activeDay<=firstDay} onClick={()=>showDay(addDays(activeDay,-1))} className="border border-slate-200 rounded px-2 py-1 disabled:opacity-30">Previous Day</button>
@@ -283,6 +292,7 @@ export default function GanttChart({tasks=[],jobs=[],calendar=[],horizonStart,ho
       </div>
     </div>
     <div hidden={!showFilters} className={showFilters?'flex flex-wrap items-center gap-2 px-4 py-1.5 border-b border-slate-100':'hidden'}>
+      <label className="text-xs text-slate-500">Resource <select aria-label="Resource filter" className={selectClass} value={resource} onChange={e=>setResource(e.target.value)}><option>All</option>{unique(tasks.flatMap(resourceIds)).map(r=><option key={r}>{r}</option>)}</select></label>
       <label className="text-xs text-slate-500 flex gap-2 items-center">Search Job <input aria-label="Search Job" placeholder="Job ID" value={search} onChange={e=>{setSearch(e.target.value);setSelected(null);}} className="border border-slate-200 rounded-md px-2 py-1 w-28 text-slate-700"/></label>
       <button onClick={reset} className="text-xs text-[#2563EB] px-2 py-1">Clear / Reset</button>
       {(Object.keys(filters) as (keyof typeof filters)[]).map(key=><label key={key} className="text-xs text-slate-500 flex gap-1 items-center">{key}<select aria-label={key+' filter'} value={filters[key]} onChange={e=>setFilters({...filters,[key]:e.target.value})} className={selectClass}><option>All</option>{options[key].map(v=><option key={v}>{v}</option>)}</select></label>)}
@@ -305,7 +315,7 @@ export default function GanttChart({tasks=[],jobs=[],calendar=[],horizonStart,ho
       {legends.map(key=><span key={key} className="flex items-center gap-1.5 whitespace-nowrap"><span className="w-2.5 h-2.5 rounded-sm shrink-0" style={{backgroundColor:color(key,mode)}}/>{key}</span>)}
     </div>
     <div aria-label="Calendar legend" className="flex flex-wrap gap-x-4 gap-y-1 px-4 py-1.5 shrink-0 border-b border-slate-100 text-[11px] text-slate-600">
-      <span className="flex items-center gap-1"><span className="w-3 h-3 bg-slate-200/60 border border-slate-200"/>Unavailable</span>
+      <span className="flex items-center gap-1"><span className="w-3 h-3 bg-slate-200/40 border border-slate-200"/>Unavailable (saved calendar)</span>
       <span className="flex items-center gap-1" title="Saved unavailability during Sunday 00:00–Monday 06:00"><span className="w-3 h-3 bg-violet-100 border border-violet-200"/>Sunday Shutdown</span>
       <span className="flex items-center gap-1"><span className="h-3 border-l border-slate-400"/>Shift Boundary</span>
       <span className="whitespace-nowrap">{shiftNames.map((name,i)=>`${name} (${shiftHours[i]})`).join(' · ')}</span>
@@ -337,17 +347,17 @@ export default function GanttChart({tasks=[],jobs=[],calendar=[],horizonStart,ho
       <div ref={scrollRef} data-testid="gantt-scroll" data-domain-start={startMs} data-domain-end={endMs} className="flex-1 min-w-0 overflow-auto" onScroll={e=>{setHover(null);setScrollLeft(e.currentTarget.scrollLeft);}}>
         <div style={{width:136+width,minWidth:'100%'}}>
           <div data-testid="gantt-header" className="flex sticky top-0 z-20 bg-white border-b border-slate-200 h-14">
-            <div className="sticky left-0 z-30 bg-[#F8FAFC] border-r border-slate-200 flex items-center px-3 text-xs font-semibold text-slate-500 shrink-0" style={{width:136}}>Workstation</div>
+            <div className="sticky left-0 z-30 bg-[#F8FAFC] border-r border-slate-200 flex items-center px-3 text-xs font-semibold text-slate-500 shrink-0" style={{width:136}}>{groupBy}</div>
             <div className="relative overflow-hidden" style={{width}}>
               {days.filter(d=>inViewport(timeToPixel(d.at),timeToPixel(d.end))).map(d=><div key={d.at} className="absolute top-0 h-7 border-l border-b border-slate-100 text-xs font-semibold text-slate-600 px-2 py-1 overflow-hidden whitespace-nowrap" style={{left:timeToPixel(d.at),width:timeToPixel(d.end)-timeToPixel(d.at)}}>{(d.end-d.at)/60000*scale>=56?<span className="relative" style={{left:Math.max(0,Math.min((d.end-d.at)/60000*scale-56,scrollLeft-timeToPixel(d.at)))}}>{d.label}</span>:null}</div>)}
               {ticks.filter(at=>inViewport(timeToPixel(at),timeToPixel(at))).map(at=><span data-testid="axis-tick" data-time={at} key={at} className="absolute top-8 text-[11px] text-slate-500 pl-1 whitespace-nowrap" style={{left:Math.round(timeToPixel(at))}}>{interval>=1440?new Date(at).toLocaleDateString(undefined,{month:'short',day:'numeric'}):new Date(at).toLocaleTimeString(undefined,{hour:'2-digit',minute:'2-digit',hour12:false})}</span>)}
             </div>
           </div>
-          {stages.map((station,i)=><div key={station} className="flex border-b border-slate-100" data-testid="gantt-row" style={{height:rowGeometry.rows.get(station)!.height,background:i%2?'#FFFFFF':'#F8FAFC'}}>
-            <div data-testid="station-label" className="sticky left-0 z-10 shrink-0 flex items-center px-3 border-r border-slate-200 text-xs font-semibold text-slate-600" style={{width:136,background:i%2?'#FFFFFF':'#F8FAFC'}}>{station}</div>
+          {stages.map((station,i)=><div key={station} className="flex border-b border-slate-200" data-testid="gantt-row" style={{height:rowGeometry.rows.get(station)!.height,background:i%2?'var(--gantt-row-odd, #FFFFFF)':'var(--gantt-row-even, #F8FAFC)'}}>
+            <div data-testid="station-label" className="sticky left-0 z-10 shrink-0 flex items-center px-3 border-r border-slate-200 text-xs font-semibold text-slate-600" style={{width:136,background:i%2?'var(--gantt-row-odd, #FFFFFF)':'var(--gantt-row-even, #F8FAFC)'}}>{station}</div>
             <div className="relative overflow-hidden" style={{width}}>
-              {(nonWorking.get(station)||[]).filter(g=>inViewport(timeToPixel(g.start),timeToPixel(g.end))).map(g=><div key={g.start} data-testid="non-working-time" data-start={g.start} data-end={g.end} data-resource={station} data-kind={g.kind} aria-label="Non-working calendar time" className={'absolute inset-y-0 '+(g.kind==='sunday'?'bg-violet-100/70':'bg-slate-200/60')} style={{left:timeToPixel(g.start),width:timeToPixel(g.end)-timeToPixel(g.start)}}
-                onMouseEnter={e=>setHover({rect:e.currentTarget.getBoundingClientRect(),details:[['Calendar',g.kind==='sunday'?'Sunday shutdown':'Unavailable'],['Reason',g.reason],['Resource',station],['Start Time',calendarTime(g.start)],['Finish Time',calendarTime(g.end)]]})} onMouseLeave={()=>setHover(null)}/>)}
+              {(nonWorking.get(station)||[]).filter(g=>inViewport(timeToPixel(g.start),timeToPixel(g.end))).map(g=><div key={g.start} data-testid="non-working-time" data-start={g.start} data-end={g.end} data-resource={station} data-kind={g.kind} aria-label="Non-working calendar time" className={'absolute inset-y-0 '+(g.kind==='sunday'?'bg-violet-100/70':'bg-slate-200/40')} style={{left:timeToPixel(g.start),width:timeToPixel(g.end)-timeToPixel(g.start)}}
+                onMouseEnter={e=>setHover({rect:e.currentTarget.getBoundingClientRect(),details:[['Calendar',g.kind==='sunday'?'Sunday shutdown':'Unavailable according to saved calendar'],['Reason',calendarReason(g.reason)],['Resource',station],['Start Time',calendarTime(g.start)],['Finish Time',calendarTime(g.end)]]})} onMouseLeave={()=>setHover(null)}/>)}
               {gridLines.map(line=>{const boundary=line.shift&&(!calendarIndex.byResource.has(station)||calendarIndex.byResource.get(station)!.some(w=>w.start<=line.at&&line.at<=w.end));return <div key={line.at} data-testid="gantt-grid-line" data-time={line.at} data-shift-boundary={boundary} aria-hidden="true" className="absolute inset-y-0 pointer-events-none" style={{left:line.left,width:1,backgroundColor:boundary?'#CBD5E1':'#E2E8F0'}}>{boundary&&<span className="absolute inset-y-0 -left-1 w-2 pointer-events-auto" onMouseEnter={e=>{const next=operationShifts(line.at,line.at+1)[0];setHover({rect:e.currentTarget.getBoundingClientRect(),details:[['Calendar','Shift boundary'],['Resource',station],['Time',calendarTime(line.at)],['Shift',`${shiftNames[next]} (${shiftHours[next]})`],['Availability','A boundary alone does not interrupt work']]});}} onMouseLeave={()=>setHover(null)}/>}</div>;})}
               {(layout.stations.get(station)||[]).map((task,index)=>{
                 const times=barTimes.get(task)!;
@@ -363,6 +373,7 @@ export default function GanttChart({tasks=[],jobs=[],calendar=[],horizonStart,ho
                 const label=barWidth>=full.length*6+10?full:barWidth>=task.jobId.length*6+8?task.jobId:'';
                 const bg=color(keyFor(task),mode);
                 return <button key={task.jobId+'|'+task.operation+'|'+index} data-testid="gantt-bar" data-job={task.jobId} data-operation={task.operation} data-start={task.startTime} data-finish={task.finishTime} data-processing={task.processingMin} data-event-count={task.members.length} data-event-ids={JSON.stringify(task.members.map(m=>m.eventId))} data-lane={task.lane} data-highlighted={highlighted(task)} aria-label={fields(task).map(([k,v])=>k+': '+v).join('; ')}
+                  data-hover-related={hover?.task?taskJobIds(task).some(id=>taskJobIds(hover.task!).includes(id)):undefined}
                   className="absolute h-9 rounded-md whitespace-nowrap hover:brightness-110 transition-[filter,opacity] text-[11px] font-semibold text-center cursor-pointer focus-visible:outline-2 focus-visible:outline-slate-900"
                   style={{top:rowGeometry.inset+task.lane*rowGeometry.lanePitch,height:rowGeometry.barHeight,borderRadius:6,left,width:barWidth,backgroundColor:bg,color:textColor(bg),opacity:highlighted(task)?1:0.18,boxShadow:selected && taskJobIds(task).includes(selectedJob)?'inset 0 0 0 2px #0F172A':'0 1px 2px #0F172A12'}}
                   onClick={()=>{setSelected(task);setSelectedJob(taskJobIds(task)[0]);setSearch('');setHover(null);}}

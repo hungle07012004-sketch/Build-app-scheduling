@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 from backend.database.db import connect, now
 from backend.errors import AppError
 
@@ -25,9 +26,32 @@ def accept(run_id):
     run = get_run(run_id)
     if run["status"]!="completed" or not run["result"].get("selected",{}).get("feasible"):
         raise AppError("NO_FEASIBLE_SCHEDULE","Only a completed, validated feasible schedule can be accepted.")
+    validate_saved_selection(run)
     with connect() as db:
         db.execute("UPDATE runs SET accepted_at=COALESCE(accepted_at,?) WHERE id=?",(now(),run_id))
     return status(run_id)
+
+
+def validate_saved_selection(run):
+    """Read-only validation against the frozen input; never rewrite historical data."""
+    from backend.services.v5_service import is_v5
+    from backend.services.v5_validation import saved_result_issues
+    selected = run["result"].get("selected")
+    if not selected or not selected.get("feasible"):
+        raise AppError("NO_FEASIBLE_SCHEDULE", "No validated feasible schedule is available.", status=409)
+    # A snapshot is present on every persisted run. In-memory legacy export
+    # callers without a snapshot retain their existing behavior.
+    if "instance_path" not in run:
+        return
+    try:
+        data = json.loads(Path(run["instance_path"]).read_text(encoding="utf-8"))
+        if not is_v5(data):
+            return
+        errors = saved_result_issues(data, run["result"]["selected"])
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        errors = [dict(entity="V5 schedule",field="snapshot",message=str(exc))]
+    if errors:
+        raise AppError("INVALID_SCHEDULE","Saved schedule failed validation; it has not been changed.",errors,status=409)
 
 def apply(run_id):
     with connect() as db:

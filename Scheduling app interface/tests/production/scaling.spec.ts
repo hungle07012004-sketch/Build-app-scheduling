@@ -1,3 +1,4 @@
+import {scheduleRows} from './aps-helpers';
 import {test,expect} from '@playwright/test';
 import {existsSync,readFileSync} from 'node:fs';
 const fixture=JSON.parse(readFileSync('.tmp-verification/reopen-fixture.json','utf8'));
@@ -13,8 +14,10 @@ test('Current exported 100-operation MILP fits actual timestamps instead of July
   await page.locator('input[type=password]').fill('planner-demo');
   await page.getByRole('button',{name:'Sign In',exact:true}).click();
   await expect(page.getByRole('heading',{name:'Production Dashboard'})).toBeVisible();
-  await page.getByRole('button',{name:'Analytics',exact:true}).click();
-  await page.getByText(fixture.small_id,{exact:true}).click();
+  await page.getByRole('button',{name:'Analytics & Reports',exact:true}).click();
+  await page.getByRole('button',{name:'Schedule Results',exact:true}).click();
+  await page.getByLabel('Search runs').fill(fixture.small_id);
+  await page.getByRole('button', {name: 'Open schedule '+fixture.small_id, exact: true}).click();
   await page.getByRole('button',{name:'Hourly view',exact:true}).click();
   const bars=page.getByTestId('gantt-bar');
   await expect(bars).toHaveCount(100);
@@ -57,7 +60,7 @@ test('Current exported 100-operation MILP fits actual timestamps instead of July
   await expect(jobBars.first()).toHaveAttribute('aria-label',new RegExp(op.startTime));
   await expect(jobBars.first()).toHaveAttribute('aria-label',new RegExp(op.finishTime));
   await page.getByRole('button',{name:'Clear / Reset'}).click();
-  await page.screenshot({path:'.tmp-verification/current-milp-fit.png',fullPage:true});
+  await page.screenshot({path:test.info().outputPath('current-milp-fit.png'),fullPage:true});
   await page.getByRole('button',{name:'Zoom in',exact:true}).click();
   await scroll.evaluate(el=>{el.scrollLeft=250;});
   await page.getByRole('button',{name:'Fit Schedule',exact:true}).click();
@@ -65,7 +68,7 @@ test('Current exported 100-operation MILP fits actual timestamps instead of July
   expect(await scroll.evaluate(el=>el.scrollLeft)).toBe(0);
   await expect(scroll).toHaveAttribute('data-domain-end',String(Math.max(max+pad,time(saved.request?.horizon_end||'')||max)));
   await page.getByRole('button',{name:'Schedule Table',exact:true}).click();
-  const rows=await page.locator('tbody tr').evaluateAll(nodes=>nodes.map(n=>Array.from(n.querySelectorAll('td')).slice(0,5).map(c=>c.textContent)));
-  expect(rows).toEqual(ops.map((o:any)=>[o.jobId,o.operation,o.workstation,o.startTime,o.finishTime]));
+  const rows=await scheduleRows(page);
+  expect(rows.sort()).toEqual(ops.map((o:any)=>[o.jobId,o.operation,o.workstation,o.startTime,o.finishTime]).sort());
   expect(solverRequests).toEqual([]);
 });

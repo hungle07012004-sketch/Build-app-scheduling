@@ -1,0 +1,77 @@
+import {test,expect} from '@playwright/test';
+import {readFileSync} from 'node:fs';
+import {scheduleRows} from './aps-helpers';
+const fixture=JSON.parse(readFileSync('.tmp-verification/reopen-fixture.json','utf8'));
+const saved=JSON.parse(readFileSync('.tmp-verification/large-gantt-result.json','utf8'));
+const calendar=JSON.parse(readFileSync('.tmp-verification/large-gantt-calendar.json','utf8'));
+async function login(page:any) {
+  await page.goto('/');await page.locator('input[type=password]').fill('planner-demo');
+  await page.getByRole('button',{name:'Sign In',exact:true}).click();
+  await expect(page.getByRole('heading',{name:'Production Dashboard'})).toBeVisible();
+}
+test('APS dashboard and studio use real data, accessible selection, responsive layout and saved-run navigation',async({page})=>{
+  const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));
+  await login(page);
+  await expect(page.getByText('Smart Production APS',{exact:true})).toBeVisible();
+  await expect(page.locator('.aps-metric')).toHaveCount(4);
+  await page.screenshot({path:test.info().outputPath('dashboard-1440.png')});
+  await page.getByRole('button',{name:'Create Schedule',exact:true}).click();
+  await expect(page.getByRole('heading',{name:'Scheduling Studio',exact:true})).toBeVisible();
+  await expect(page.getByRole('list',{name:'Scheduling workflow'})).toBeVisible();
+  const all=page.getByRole('checkbox',{name:'Select all filtered jobs'});
+  await all.check();await expect(all).toBeChecked();
+  await expect(page.getByRole('button',{name:'Validate Data',exact:true})).toBeEnabled();
+  await page.getByRole('button',{name:'Clear selection'}).click();await expect(all).not.toBeChecked();
+  await expect(page.getByRole('button',{name:'Validate Data',exact:true})).toBeDisabled();
+  await page.getByPlaceholder('Search jobs…').fill('J001');
+  await expect(page.locator('tbody tr')).toHaveCount(1);
+  await page.getByRole('checkbox',{name:'Select J001',exact:true}).check();
+  await page.getByPlaceholder('Search jobs…').fill('');
+  await expect(page.getByRole('checkbox',{name:'Select J001',exact:true})).toBeChecked();
+  for(const width of [1440,1920,768,390]) {
+    await page.setViewportSize({width,height:1000});
+    expect(await page.locator('main').evaluate(el=>el.scrollWidth<=el.clientWidth+1)).toBeTruthy();
+    await page.screenshot({path:test.info().outputPath('studio-'+width+'.png')});
+  }
+  await page.setViewportSize({width:1440,height:1000});
+  await page.getByRole('button',{name:'Schedule Results',exact:true}).click();
+  await expect(page.getByRole('heading',{name:'Schedule Results',exact:true})).toBeVisible();
+  await page.getByLabel('Search runs').fill(fixture.small_id);
+  await page.getByRole('button',{name:'Open schedule '+fixture.small_id}).click();
+  await expect(page.getByRole('heading',{name:'Scheduling Result'})).toBeVisible();
+  expect(errors).toEqual([]);
+});
+test('APS large result: Job grouping preserves events, table pagination and navigation preserve exact values',async({page})=>{
+  const before=JSON.stringify(saved), errors:string[]=[];
+  page.on('pageerror',e=>errors.push(e.message));
+  await page.route('**/api/schedules/'+fixture.small_id+'/result',r=>r.fulfill({json:saved}));
+  await page.route('**/api/schedules/'+saved.run_id+'/result?validate_export=true',r=>r.fulfill({json:saved}));
+  await page.route('**/api/calendar?run_id=*',r=>r.fulfill({json:calendar}));
+  await login(page);
+  await page.getByRole('button',{name:'Schedule Results',exact:true}).click();
+  await page.getByLabel('Search runs').fill(fixture.small_id);
+  await page.getByRole('button',{name:'Open schedule '+fixture.small_id}).click();
+  await expect(page.getByTestId('operation-count')).toHaveText('11290 / 11290 operations');
+  await page.getByRole('button',{name:'Fit Schedule',exact:true}).click();
+  const ids=()=>page.getByTestId('gantt-bar').evaluateAll(nodes=>[...new Set(nodes.flatMap(n=>JSON.parse(n.getAttribute('data-event-ids')!)))].sort());
+  const stationEvents=await ids();
+  await page.getByRole('button',{name:'By Job',exact:true}).click();
+  expect(await ids()).toEqual(stationEvents);
+  await expect(page.getByTestId('non-working-time')).toHaveCount(0);
+  await page.getByRole('button',{name:'By Workstation',exact:true}).click();
+  expect(await ids()).toEqual(stationEvents);
+  await page.getByRole('button',{name:'1 Day',exact:true}).click();
+  await page.screenshot({path:test.info().outputPath('results-1440.png')});
+  await page.getByRole('button',{name:'Schedule Table',exact:true}).click();
+  await expect(page.locator('tbody tr')).toHaveCount(50);
+  await page.getByLabel('Table Job filter').selectOption('J004');
+  const expected=saved.selected.operations.filter((t:any)=>(t.jobIds||[t.jobId]).includes('J004'));
+  const rows=await scheduleRows(page);
+  expect(rows.sort()).toEqual(expected.map((t:any)=>[t.jobId,t.operation,t.workstation,t.startTime,t.finishTime]).sort());
+  const download=page.waitForEvent('download');await page.getByRole('button',{name:'Export CSV',exact:true}).click();
+  expect((await download).suggestedFilename()).toBe('AL13_Detailed_Schedule.csv');
+  await page.getByRole('button',{name:/Locate .* in Gantt/}).first().click();
+  await expect(page.getByLabel('Search Job',{exact:true})).toHaveValue('J004');
+  expect(JSON.stringify(saved)).toBe(before);
+  expect(errors).toEqual([]);
+});

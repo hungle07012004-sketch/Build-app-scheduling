@@ -672,7 +672,6 @@ def solve_instance(
     status = solver.Solve(model)
     runtime = time.perf_counter() - t0
     feasible = status in (cp_model.OPTIMAL, cp_model.FEASIBLE)
-    proven_optimal = status == cp_model.OPTIMAL
 
     schedule = []
     total_tard = None
@@ -741,6 +740,12 @@ def solve_instance(
     rel_gap = None
     if feasible and makespan is not None and makespan > 1e-12 and best_bound is not None:
         rel_gap = max(0.0, (makespan - best_bound) / makespan)
+    # OPTIMAL can also mean that a configured gap tolerance was reached.
+    # Only claim a proof when the incumbent and lower bound actually coincide.
+    proven_optimal = bool(
+        status == cp_model.OPTIMAL and makespan is not None and best_bound is not None
+        and abs(makespan - best_bound) <= 1e-9
+    )
 
     return {
         "instance_name": name,
@@ -758,6 +763,7 @@ def solve_instance(
         "makespan_min": makespan,
         "best_bound_min": best_bound,
         "relative_gap": rel_gap,
+        "relative_gap_limit": float(solver.parameters.relative_gap_limit),
         "runtime_sec": float(runtime),
         "num_conflicts": int(solver.NumConflicts()),
         "num_branches": int(solver.NumBranches()),

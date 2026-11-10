@@ -4,11 +4,12 @@ test('All computation presets reach real preview API and outgoing run payload',a
   await page.goto('/');await page.locator('input[type=password]').fill('planner-demo');
   await page.getByRole('button',{name:'Sign In',exact:true}).click();
   await expect(page.getByRole('heading',{name:'Production Dashboard'})).toBeVisible();
-  await page.getByRole('button',{name:'Jobs',exact:true}).click();
+  if(await page.getByRole('button',{name:'Input Data',exact:true}).getAttribute('aria-expanded')==='false')await page.getByRole('button',{name:'Input Data',exact:true}).click();
+  await page.getByRole('navigation',{name:'Main navigation'}).getByRole('button',{name:'Jobs',exact:true}).click();
   await page.getByLabel('Upload Input File').setInputFiles('tests/fixtures/v5-integration.json');
   await expect(page.locator('tbody tr')).toHaveCount(4);
-  await page.getByRole('button',{name:'Scheduling',exact:true}).click();
-  await page.locator('thead button').click();
+  await page.getByRole('button',{name:'Scheduling Studio',exact:true}).click();
+  await page.getByRole('checkbox',{name:'Select all filtered jobs'}).check();
   await page.getByRole('button',{name:'Validate Data',exact:true}).click();
   await expect(page.getByRole('heading',{name:'Data Validation Passed'})).toBeVisible();
   await expect(page.getByRole('button',{name:'120 sec',exact:true})).toHaveAttribute('aria-pressed','true');

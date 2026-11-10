@@ -6,6 +6,7 @@ export interface CalendarWindow {
 }
 export interface TimeRange {start:number;end:number}
 export interface CalendarGap extends TimeRange {resource:string;kind:'unknown'|'sunday';reason:string}
+export const calendarReason = (reason?: string) => reason?.trim() ? reason : 'Reason not recorded in saved calendar';
 export interface CalendarCheck {
   overlaps:CalendarGap[];
   weekly:TimeRange[];
@@ -76,10 +77,10 @@ export function indexCalendar(calendar:CalendarWindow[]) {
     let cursor=start;
     for(let i=lo;i<windows.length&&windows[i].start<end;i++) {
       const w=windows[i];
-      if(w.start>cursor)result.push({resource,start:cursor,end:Math.min(w.start,end),kind:'unknown',reason:'Reason not recorded'});
+      if(w.start>cursor)result.push({resource,start:cursor,end:Math.min(w.start,end),kind:'unknown',reason:calendarReason()});
       cursor=Math.max(cursor,w.end);
     }
-    if(cursor<end)result.push({resource,start:cursor,end,kind:'unknown',reason:'Reason not recorded'});
+    if(cursor<end)result.push({resource,start:cursor,end,kind:'unknown',reason:calendarReason()});
     return result;
   }
   function shading(resource:string,start:number,end:number):CalendarGap[] {

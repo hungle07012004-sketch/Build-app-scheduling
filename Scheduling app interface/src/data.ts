@@ -37,7 +37,7 @@ export interface WorkstationData {
   stage: string;
   currentJob: string | null;
   availability: string;
-  utilization: number;
+  utilization: number | null;
   status: 'Available' | 'Busy' | 'Downtime';
   upcomingJobs: string[];
 }

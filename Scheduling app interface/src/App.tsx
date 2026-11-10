@@ -3,7 +3,14 @@ import { post } from './api';
 import ApiNotice from './components/ApiNotice';
 import ExecutionPage from './pages/ExecutionPage';
 import { useState, useEffect } from 'react';
-import Sidebar, { type Page } from './components/Sidebar';
+import Sidebar, { type Page, pageNames } from './components/Sidebar';
+import './aps.css';
+import './industrial.css';
+import IndustrialBackdrop from './components/IndustrialBackdrop';
+import { Home, ChevronRight, Factory, Menu } from 'lucide-react';
+import ResultsPage from './pages/ResultsPage';
+import InputDataPanel from './components/InputDataPanel';
+import { PageHeading } from './components/aps';
 import LoginPage from './pages/LoginPage';
 import DashboardPage from './pages/DashboardPage';
 import JobsPage from './pages/JobsPage';
@@ -15,31 +22,40 @@ import SettingsPage from './pages/SettingsPage';
 export default function App() {
   const [loggedIn, setLoggedIn] = useState(!!sessionStorage.getItem('al13-token'));
   const [page, setPage] = useState<Page>('dashboard');
-  const [inScheduleFlow, setInScheduleFlow] = useState(false);
+  const [flowKey, setFlowKey] = useState(0);
+  const [navigationOpen, setNavigationOpen] = useState(false);
+
+  useEffect(()=>{const close=(event:KeyboardEvent)=>{if(event.key==='Escape')setNavigationOpen(false);};window.addEventListener('keydown',close);return()=>window.removeEventListener('keydown',close);},[]);
 
   useEffect(() => { const expire=()=>{sessionStorage.removeItem('al13-token');setLoggedIn(false);}; window.addEventListener('al13-unauthorized',expire); return ()=>window.removeEventListener('al13-unauthorized',expire); }, []);
 
-  useEffect(()=>{const open=()=>setPage('scheduling');window.addEventListener('al13-open-run',open);return()=>window.removeEventListener('al13-open-run',open);},[]);
+  useEffect(()=>{const open=()=>{setFlowKey(k=>k+1);setPage('scheduling');};window.addEventListener('al13-open-run',open);return()=>window.removeEventListener('al13-open-run',open);},[]);
   if (!loggedIn) return <LoginPage onLogin={() => setLoggedIn(true)} />;
 
-  function goToSchedule() { sessionStorage.removeItem('al13-run'); setInScheduleFlow(true); setPage('scheduling'); }
-  function handleScheduleDone() { setInScheduleFlow(false); setPage('execution'); }
+  function goToSchedule() { sessionStorage.removeItem('al13-run'); setFlowKey(k=>k+1); setPage('scheduling'); }
+  function handleScheduleDone() { setPage('execution'); }
 
   return (
-    <AppDataProvider><div className="flex h-screen overflow-hidden bg-[#F8FAFC]">
+    <AppDataProvider><div className={'aps-shell flex h-dvh overflow-hidden '+(navigationOpen?'navigation-open':'')}>
+      <IndustrialBackdrop/>
+      {navigationOpen&&<button className="industrial-nav-scrim" aria-label="Close navigation" onClick={()=>setNavigationOpen(false)}/>}
       <Sidebar
         current={page}
-        onNavigate={p => { setPage(p); if (p !== 'scheduling') setInScheduleFlow(false); }}
+        open={navigationOpen}
+        onNavigate={p => { setPage(p); setNavigationOpen(false); }}
+        onClose={()=>setNavigationOpen(false)}
         onLogout={() => { void post('/auth/logout').catch(()=>{}); sessionStorage.removeItem('al13-token'); setLoggedIn(false); }}
       />
-      <main className="flex-1 flex flex-col overflow-hidden"><DataNotice/>
+      <main className="flex-1 min-w-0 flex flex-col overflow-hidden"><header className="aps-topbar"><div className="flex items-center gap-2"><button className="industrial-menu" aria-label="Open navigation" aria-expanded={navigationOpen} onClick={()=>setNavigationOpen(v=>!v)}><Menu size={20}/></button><Home size={15}/><span>Workspace</span><ChevronRight size={13}/><strong className="text-slate-800">{pageNames[page]}</strong></div><span className="flex items-center gap-2"><Factory size={15}/><span className="hidden sm:inline">AL13 V5 · Production Planning</span></span></header><DataNotice/>
         {page === 'dashboard' && (
-          <DashboardPage onCreateSchedule={goToSchedule} />
+          <DashboardPage onCreateSchedule={goToSchedule} onViewResults={()=>setPage('results')} />
         )}
         {page === 'jobs' && <JobsPage />}
+        {page === 'results' && <ResultsPage onCreateSchedule={goToSchedule}/>}
+        {(['processing-times','resources','calendar'] as Page[]).includes(page) && <div className="flex-1 overflow-auto"><div className="aps-page"><PageHeading title={pageNames[page]} description="Review the current dataset. Saved runs retain their original frozen input."/><InputDataPanel key={page} initialTab={page}/></div></div>}
         {page === 'execution' && <ExecutionPage />}
         {page === 'scheduling' && (
-          <ScheduleFlow onDone={handleScheduleDone} />
+          <ScheduleFlow key={flowKey} onDone={handleScheduleDone} />
         )}
         {page === 'workstations' && <WorkstationsPage />}
         {page === 'analytics' && <AnalyticsPage />}
