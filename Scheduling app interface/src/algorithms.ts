@@ -3,6 +3,6 @@ export const algorithms: Record<string,{name:string;description:string}> = {
   'SS Micro-GA Fast': {name:'GA (SS Micro-GA Fast)',description:'Genetic search for V5 production schedules.'},
   'MILP': {name:'MILP (legacy)',description:'Existing mathematical solver for legacy datasets and saved schedules.'},
   'Improved GA': {name:'GA (Improved GA)',description:'Genetic search with the existing IG implementation for legacy data.'},
-  'MLPSO': {name:'MLPSO',description:'Multi-Level Particle Swarm Optimization for compatible legacy data.'},
+  'MLPSO': {name:'MLPSO',description:'Multi-Level Particle Swarm Optimization; V3 with the shared decoder for V5 data.'},
 };
 export const algorithmName=(id?:string)=>id ? algorithms[id]?.name || id : '\u2014';

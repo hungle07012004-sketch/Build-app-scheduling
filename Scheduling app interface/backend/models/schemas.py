@@ -13,6 +13,7 @@ class SolverSettings(BaseModel):
     ga_generations: int = Field(500, ge=1, le=10000)
     mlpso_population: int = Field(60, ge=3, le=500)
     mlpso_iterations: int = Field(500, ge=1, le=10000)
+    mlpso_max_decodes: int = Field(12000, ge=1, le=100000)
     milp_time_limit: float = Field(600, gt=0, le=7200)
     exact_time_limit: float = Field(120, gt=0, le=7200)
     exact_workers: int = Field(0, ge=0, le=32)

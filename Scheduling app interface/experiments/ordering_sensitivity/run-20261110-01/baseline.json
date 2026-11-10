@@ -1,0 +1,11 @@
+{
+  "run_id": "236e9e6fbb1044fab37acb6064f8b4b2",
+  "cmax_min": 66679.265,
+  "tardy_jobs": 130,
+  "total_tardiness_min": 2288702.9819999994,
+  "total_flow_time_min": 3194177.6009999993,
+  "late_before_pre": 115,
+  "mean_release_to_pre_hours": 280.8212050200803,
+  "max_visual_to_2c_hours": 610.3003166666664,
+  "setup_count": 8
+}

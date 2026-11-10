@@ -1,0 +1,25 @@
+{
+  "run_id": "236e9e6fbb1044fab37acb6064f8b4b2",
+  "input_path": "D:\\back up giga\\thesis\\flowlien dataset\\remake new data\\build app\\Scheduling app interface\\backend\\storage\\runs\\236e9e6fbb1044fab37acb6064f8b4b2\\instance.json",
+  "input_sha256": "9b377fa3043fce2ec7c1979458c815c2a9762d0b7c3cd3a3cf82f80a3d3bb4b1",
+  "snapshot_sha256": "553112d0195564c3ecf09b273bb437efa2416cd7c5a0a5fcb27f4e4bd2097344",
+  "decoder_module": "backend.solver_v5.benchmark_common_fast",
+  "objective": "MIN_CMAX_FINAL_2C",
+  "seeds": [
+    42,
+    1051,
+    2060
+  ],
+  "calls_per_arm": 40,
+  "arms": [
+    "control",
+    "release",
+    "pair",
+    "combined"
+  ],
+  "baseline_validation": "PASS",
+  "protocol": "Same saved incumbent per arm, strict Cmax acceptance, serial; new unique full search decodes including initial incumbent; reconstruction/validator reported separately. Not a full GA benchmark or equal wall-time protocol.",
+  "source_files_changed": [],
+  "input_unchanged": true,
+  "snapshot_unchanged": true
+}

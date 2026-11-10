@@ -24,7 +24,7 @@ def test_availability_and_determinism(monkeypatch):
     from backend.services import algorithm_selection as selector
     data=instance()
     assert route(4,data)==route(4,data)
-    assert not route(4,data)["availability"]["MLPSO"]["available"]
+    assert route(4,data)["availability"]["MLPSO"]["available"]
     original=selector.availability
     def missing_cp(v5):
         value=original(v5);value["CP-SAT"]["available"]=False;return value
@@ -45,7 +45,10 @@ def test_preview_no_runs_and_manual_override(client):
     manual=client.post('/api/schedules/preview',json=body).json()
     assert manual['algorithms']==['CP-SAT'] and manual['selection_mode']=='Manual'
     body['algorithms']=['MLPSO']
-    assert client.post('/api/schedules/run',json=body).status_code==400
+    body['settings']['mlpso_population']=6
+    manual=client.post('/api/schedules/preview',json=body)
+    assert manual.status_code==200,manual.text
+    assert manual.json()['algorithms']==['MLPSO']
     with connect() as db:
         assert db.execute('SELECT count(*) FROM runs').fetchone()[0]==0
 

@@ -20,7 +20,7 @@ def availability(v5):
         return (ROOT / folder / file).is_file()
     cp = v5 and exists("backend/solver_v5", "solve_milp_instance.py") and importlib.util.find_spec("ortools") is not None
     ga = exists("backend/solver_v5" if v5 else "code", "solve_ss_micro_ga_fast_instance.py" if v5 else "solve_improved_ga_ig_v3_earlystop_instance.py")
-    mlpso = not v5 and exists("code", "solve_mlpso_instance.py")
+    mlpso = exists("backend/solver_v5" if v5 else "code", "solve_mlpso_v3_instance.py" if v5 else "solve_mlpso_instance.py")
     return {
         "CP-SAT": {"available": bool(cp), "reason": "" if cp else "CP-SAT is available only with compatible V5 data and OR-Tools installed."},
         "SS Micro-GA Fast" if v5 else "Improved GA": {"available": ga, "reason": "" if ga else "The GA implementation is missing."},

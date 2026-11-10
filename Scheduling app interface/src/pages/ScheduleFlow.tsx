@@ -19,7 +19,7 @@ const parameterLabel=(key:string)=>({
   exact_workers:'CPU workers (0 = automatic)',micro_population:'Candidate schedules per generation',
   micro_generations:'Maximum search epochs',micro_max_decodes:'Maximum schedule evaluations per run',
   ga_population:'GA candidate schedules',ga_generations:'GA search generations',
-  mlpso_population:'MLPSO swarm size',mlpso_iterations:'MLPSO iterations',
+  mlpso_population:'MLPSO swarm size (V5: multiple of 3; within permutation count)',mlpso_iterations:'MLPSO iterations',mlpso_max_decodes:'MLPSO V3 evaluations per attempt (no time cap)',
   milp_time_limit:'Exact Search time limit (seconds)',target_polish_generations:'Refinement generations after reaching target'
 } as Record<string,string>)[key] || key;
 function SelectJobsStep({ onNext, initial, busy, settings }: { settings:Record<string,number>; onNext: (ids: Set<string>, start:string, end:string, algorithms:string[]) => void; initial:any; busy:boolean }) {
@@ -297,12 +297,13 @@ export default function ScheduleFlow({onDone}: {onDone:()=>void}) {
       <p className="text-xs text-slate-500">Runs: {previewCurrent?activeAlgorithms.map(algorithmName).join(' + '):'Checking selection...'}</p>
       <SchedulingMethod jobCount={validation.size} v5={validation.schema_version==='AL13_BENCHMARK_V5'} value={request?.algorithms || []} onChange={algorithms=>void validate(new Set(request.job_ids),request.horizon_start,request.horizon_end,algorithms)} disabled={busy} previewRequest={previewRequest} onPreview={(data,key)=>setPreview({data,key})}/>
       {validation.issues.map((e,i)=><p key={i} className="text-sm text-red-600">{e.entity} · {e.field}: {e.message}</p>)}
-      {validation.schema_version==='AL13_BENCHMARK_V5' && <section aria-label="Optimization Time" className="rounded-lg border border-slate-200 p-3">
+      {validation.schema_version==='AL13_BENCHMARK_V5' && activeAlgorithms.some(a=>a==='CP-SAT'||a==='SS Micro-GA Fast') && <section aria-label="Optimization Time" className="rounded-lg border border-slate-200 p-3">
         <h3 className="text-sm font-semibold mb-2">Optimization Time</h3>
         <div className="flex flex-wrap gap-2">{[60,120,300,600,900].map(seconds=><button key={seconds} type="button" aria-pressed={activeAlgorithms.every(a=>Number(settings[a==='CP-SAT'?'exact_time_limit':'micro_time_limit']??120)===seconds)} onClick={()=>setSettings({...settings,exact_time_limit:seconds,micro_time_limit:seconds})} className="border border-slate-200 rounded-lg px-3 py-1.5 text-sm aria-pressed:bg-blue-50 aria-pressed:border-blue-400">{seconds} sec{seconds>=600?` (${seconds/60} min)`:""}</button>)}</div>
-        <div className="flex flex-wrap gap-3 mt-3">{activeAlgorithms.map(a=>{const key=a==='CP-SAT'?'exact_time_limit':'micro_time_limit';return <label key={a} className="text-xs text-slate-500">{a==='CP-SAT'?'CP-SAT':'GA'} custom seconds<input aria-label={a+' time budget'} type="number" min={1} max={7200} className="block border border-slate-200 rounded p-2 mt-1" value={settings[key]??120} onChange={e=>setSettings({...settings,[key]:Number(e.target.value)})}/></label>;})}</div>
+        <div className="flex flex-wrap gap-3 mt-3">{activeAlgorithms.filter(a=>a==='CP-SAT'||a==='SS Micro-GA Fast').map(a=>{const key=a==='CP-SAT'?'exact_time_limit':'micro_time_limit';return <label key={a} className="text-xs text-slate-500">{a==='CP-SAT'?'CP-SAT':'GA'} custom seconds<input aria-label={a+' time budget'} type="number" min={1} max={7200} className="block border border-slate-200 rounded p-2 mt-1" value={settings[key]??120} onChange={e=>setSettings({...settings,[key]:Number(e.target.value)})}/></label>;})}</div>
         <p className="text-xs text-slate-500 mt-2">Computation time is separate from the production calendar. Search may finish early. Setup, the current evaluation and final schedule validation can add time. GA shares this budget across all attempts.</p>
       </section>}
+      {validation.schema_version==='AL13_BENCHMARK_V5' && activeAlgorithms.includes('MLPSO') && <p className="text-xs text-slate-500">MLPSO V3 uses iteration and evaluation limits per attempt, with no wall-clock cap. Configure these in Advanced settings.</p>}
       <details><summary className="text-sm text-[#64748B] cursor-pointer">Advanced settings</summary><div className="grid grid-cols-2 gap-3 mt-3">
         {activeFields.map(([key,value])=><label className="text-xs text-[#64748B]" key={key}>{parameterLabel(String(key))}<input aria-label={String(key)} type="number" step="any" className="w-full border border-slate-200 rounded-lg p-2" value={settings[String(key)]??value} onChange={e=>setSettings({...settings,[String(key)]:Number(e.target.value)})}/></label>)}
       </div></details>

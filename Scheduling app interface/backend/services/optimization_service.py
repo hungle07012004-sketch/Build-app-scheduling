@@ -25,7 +25,7 @@ def prepare(request, preflight=True):
     routing = route(len(request.job_ids),instance,request.settings.model_dump())
     if request.algorithms:
         from backend.services.v5_service import is_v5
-        supported={"CP-SAT","SS Micro-GA Fast"} if is_v5(instance) else {"MILP","Improved GA","MLPSO"}
+        supported={"CP-SAT","SS Micro-GA Fast","MLPSO"} if is_v5(instance) else {"MILP","Improved GA","MLPSO"}
         if len(request.algorithms)!=len(set(request.algorithms)) or not set(request.algorithms)<=supported:
             raise AppError("UNSUPPORTED_ALGORITHM","Choose algorithms compatible with this dataset.")
         unavailable = [a for a in request.algorithms if a in routing["availability"] and not routing["availability"][a]["available"]]
@@ -42,6 +42,13 @@ def prepare(request, preflight=True):
 
 def start(request):
     instance,errors,routing = prepare(request)
+    from backend.services.v5_service import is_v5
+    if is_v5(instance) and "MLPSO" in routing["algorithms"]:
+        from backend.solver_v5.solve_mlpso_v3_instance import _effective_population_size
+        try:
+            _effective_population_size(len(request.job_ids),request.settings.mlpso_population,3)
+        except ValueError as exc:
+            raise AppError("INVALID_INPUT","Invalid MLPSO swarm size. Adjust it in Advanced settings: " + str(exc)) from exc
     if errors:
         raise AppError("VALIDATION_FAILED","Fix validation issues before running a solver.",errors)
     run_id = uuid.uuid4().hex

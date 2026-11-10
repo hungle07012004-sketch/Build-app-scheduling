@@ -1,0 +1,50 @@
+import {test,expect} from '@playwright/test';
+
+// Run only with an isolated backend data directory, never against saved App data.
+test('V5: manual MLPSO -> settings -> real feasible result and export',async({page,request})=>{
+  const errors:string[]=[];
+  page.on('pageerror',error=>errors.push(error.message));
+  await page.goto('/');
+  await page.locator('input[type=password]').fill('planner-demo');
+  await page.getByRole('button',{name:'Sign In',exact:true}).click();
+  await expect(page.getByRole('heading',{name:'Production Dashboard'})).toBeVisible();
+  if(await page.getByRole('button',{name:'Input Data',exact:true}).getAttribute('aria-expanded')==='false')
+    await page.getByRole('button',{name:'Input Data',exact:true}).click();
+  await page.getByRole('navigation',{name:'Main navigation'}).getByRole('button',{name:'Jobs',exact:true}).click();
+  await page.getByLabel('Upload Input File').setInputFiles('.tmp-qa/pilot-v5-readonly-20261108T032956Z/n020/frozen.json');
+  await expect(page.getByText(/frozen.json/).first()).toBeVisible();
+  await page.getByRole('button',{name:'Scheduling Studio',exact:true}).click();
+  await page.getByRole('checkbox',{name:'Select all filtered jobs'}).check();
+  const mlpso=page.getByRole('radio',{name:'MLPSO',exact:true});
+  await expect(mlpso).toBeEnabled();
+  await mlpso.check();
+  await page.getByRole('button',{name:'Validate Data',exact:true}).click();
+  await expect(page.getByRole('heading',{name:'Data Validation Passed'})).toBeVisible();
+  await expect(page.getByText('Runs: MLPSO',{exact:true})).toBeVisible();
+  await expect(page.getByRole('region',{name:'Optimization Time'})).toHaveCount(0);
+  await expect(page.getByLabel('MLPSO time budget',{exact:true})).toHaveCount(0);
+  await expect(page.getByText(/MLPSO V3 uses iteration and evaluation limits/)).toBeVisible();
+  await page.getByText('Advanced settings',{exact:true}).click();
+  await page.getByLabel('mlpso_population',{exact:true}).fill('6');
+  await page.getByLabel('mlpso_iterations',{exact:true}).fill('2');
+  await page.getByLabel('mlpso_max_decodes',{exact:true}).fill('60');
+  await page.getByRole('button',{name:'Run Optimization',exact:true}).click();
+  await expect(page.getByRole('heading',{name:'Scheduling Result',exact:true})).toBeVisible({timeout:60_000});
+  const rid=await page.evaluate(()=>sessionStorage.getItem('al13-run'));
+  const token=await page.evaluate(()=>sessionStorage.getItem('al13-token'));
+  const headers={Authorization:'Bearer '+token};
+  const response=await request.get('/api/schedules/'+rid+'/result',{headers});
+  expect(response.ok()).toBeTruthy();
+  const result=await response.json();
+  expect(result.request.algorithms).toEqual(['MLPSO']);
+  expect(result.request.job_ids).toHaveLength(20);
+  expect(result.request.settings.mlpso_max_decodes).toBe(60);
+  expect(result.selected.feasible).toBe(true);
+  expect(result.selected.validation_issues).toEqual([]);
+  expect(result.selected.metadata.decoder_module).toBe('backend.solver_v5.benchmark_common_fast');
+  expect(result.selected.metadata.run_summaries[0].unique_evaluations).toBeLessThanOrEqual(60);
+  expect(result.selected.makespan_min).toBeGreaterThan(0);
+  const exported=await request.get('/api/schedules/'+rid+'/export.xlsx',{headers});
+  expect(exported.ok()).toBeTruthy();
+  expect(errors).toEqual([]);
+});

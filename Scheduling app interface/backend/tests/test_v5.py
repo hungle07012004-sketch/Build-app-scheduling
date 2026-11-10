@@ -70,7 +70,7 @@ def test_real_v5_adapters(tmp_path,algorithm,solve):
     assert not standardize(algorithm,bad,data)["feasible"]
 
 
-@pytest.mark.parametrize("chosen",["CP-SAT","SS Micro-GA Fast"])
+@pytest.mark.parametrize("chosen",["CP-SAT","SS Micro-GA Fast","MLPSO"])
 def test_v5_app_flow(client,chosen):
     uploaded=client.post("/api/input/upload",files={"file":("v5.json",json.dumps(instance()),"application/json")})
     assert uploaded.status_code==200,uploaded.text
@@ -79,7 +79,7 @@ def test_v5_app_flow(client,chosen):
         assert client.get("/api/"+endpoint).status_code==200
     body=dict(dataset_id=ds,job_ids=[j["job_id"] for j in instance()["jobs"]],
               horizon_start="2026-10-01T06:00",horizon_end="2026-10-02T06:00",
-              algorithms=[chosen],settings={"exact_time_limit":5,"exact_workers":1,"micro_population":4,"micro_generations":2,"micro_max_decodes":100})
+              algorithms=[chosen],settings={"exact_time_limit":5,"exact_workers":1,"micro_population":4,"micro_generations":2,"micro_max_decodes":100,"mlpso_population":6,"mlpso_iterations":2,"mlpso_max_decodes":12})
     valid=client.post("/api/schedules/validate",json=body).json()
     assert valid["valid"] and valid["algorithms"]==[chosen],valid
     started=client.post("/api/schedules/run",json=body)
@@ -116,7 +116,7 @@ def test_v5_app_flow(client,chosen):
     assert client.get(f"/api/schedules/{rid}/result").json()["selected"]==result["selected"]
     assert client.get("/api/analytics/overview").status_code==200
 
-@pytest.mark.parametrize("choices",[["MILP"],["CP-SAT","CP-SAT"],["MLPSO"]])
+@pytest.mark.parametrize("choices",[["MILP"],["CP-SAT","CP-SAT"],["Improved GA"]])
 def test_reject_incompatible_selection(client,choices):
     ds=client.post("/api/input/upload",files={"file":("v5.json",json.dumps(instance()),"application/json")}).json()["id"]
     body=dict(dataset_id=ds,job_ids=[j["job_id"] for j in instance()["jobs"]],
