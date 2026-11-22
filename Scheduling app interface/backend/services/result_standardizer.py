@@ -48,6 +48,8 @@ def select_best(results):
     feasible = [r for r in results if r.get("feasible")]
     if not feasible:
         return None, "No valid feasible schedule."
+    if any(r.get('algorithm')=='MIN_TARDY_GROUPED_LNS_V5' for r in feasible):
+        return min(feasible,key=lambda r:(r['tardy_jobs'],r['total_tardiness_min'],r['makespan_min'])), 'Explicit Min Tardy comparison: selected by (tardy jobs, total tardiness, makespan). Algorithms target different objectives.'
     fields = ("makespan_min",) if all(r.get("objective")=="MIN_CMAX_FINAL_2C" for r in feasible) else ("makespan_min","total_tardiness_min","total_flow_time_min")
     ordered = sorted(feasible,key=lambda r:tuple(round(r[k],9) for k in fields))
     reason = "Only feasible result."

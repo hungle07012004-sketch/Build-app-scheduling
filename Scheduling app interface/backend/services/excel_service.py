@@ -17,6 +17,7 @@ def method_name(request):
     chosen=request.get("algorithms",[])
     if not chosen: return "Automatic"
     if len(chosen)>1: return "Parallel Optimization"
+    if chosen[0]=='MIN_TARDY_GROUPED_LNS_V5': return 'Min Tardy - Due-Date Grouping + LNS'
     return "CP-SAT" if chosen[0]=="CP-SAT" else "MLPSO" if chosen[0]=="MLPSO" else "MILP (legacy)" if chosen[0]=="MILP" else "GA"
 
 
@@ -65,7 +66,36 @@ def export(run_id):
         ["Applied at",run.get("applied_at")],["Operation count",len(selected["operations"])],
         ["Time convention","Factory local time; durations in minutes"]
     ]: summary.append(row)
+    if selected['algorithm']=='MIN_TARDY_GROUPED_LNS_V5':
+        meta=selected.get('metadata',{})
+        for row in [
+            ['Objective','Lexicographic (N_tardy, Total Tardiness, Cmax); current dataset deadlines'],
+            ['Original due grouping (calendar days)',meta.get('due_group_days')],
+            ['Tardy (%)',meta.get('tardy_percent')],['OTD (%)',meta.get('otd_percent')],
+            ['Overdue before PRE',meta.get('N_pre_overdue')],
+            ['Unique full decoder calls',meta.get('unique_full_decoder_calls')],
+            ['Incumbent fallback',bool(meta.get('incumbent_fallback'))],
+        ]: summary.append(row)
     sheet=wb.create_sheet("Detailed Schedule")
+    if selected.get('metadata',{}).get('deadline_comparison'):
+        guard=selected['metadata']
+        if guard.get('on_time_reference_policy'):
+            summary.append(['On-time policy','Keep validated zero-tardy reference unless search produces a no-worse on-time schedule'])
+            summary.append(['Returned schedule origin',guard.get('returned_origin')])
+            summary.append(['Search-produced tardy jobs',guard.get('search_produced_metrics',{}).get('tardy_jobs')])
+        from pathlib import Path
+        import json
+        from backend.services.deadline_service import comparison
+        data=json.loads(Path(run['instance_path']).read_text(encoding='utf-8'))
+        due=comparison(data,selected['operations'])
+        summary.append(['Deadline basis','Relaxed to reference final 2C completion; fixed before this run'])
+        summary.append(['Reference run',due['source_run_id']])
+        summary.append(['Tardy jobs under original deadlines',due['original_tardy_jobs']])
+        summary.append(['Tardy jobs under relaxed deadlines',due['adjusted_tardy_jobs']])
+        deadlines=wb.create_sheet('Deadline Comparison')
+        deadlines.append(['Job ID','Original due (min)','Relaxed due (min)','Final 2C completion (min)','Original tardy','Relaxed tardy'])
+        for r in due['jobs']:
+            deadlines.append([r['job_id'],r['original_due_min'],r['due_min'],r['completion_min'],r['original_tardy'],r['adjusted_tardy']])
     sheet.append(["Job ID","Product","Operation","Workstation","Start Time","Finish Time","Processing Time (min)","Shift","Status",
                   "Event ID","Event Type","Contributing Job IDs","Resource Units","Window ID"])
     for row_index,o in enumerate(selected["operations"],start=2):

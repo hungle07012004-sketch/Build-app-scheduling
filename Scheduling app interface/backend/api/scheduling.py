@@ -35,6 +35,16 @@ def result(run_id: str, validate_export: bool = False):
 def accept(run_id: str):
     return schedules.accept(run_id)
 
+@router.get("/schedules/{run_id}/relaxed-deadlines")
+def preview_relaxed_deadlines(run_id: str):
+    from backend.services.deadline_service import prepare
+    return prepare(schedules.get_run(run_id))[1]
+
+@router.post("/schedules/{run_id}/relaxed-deadlines")
+def create_relaxed_deadlines(run_id: str):
+    from backend.services.deadline_service import create
+    return create(schedules.get_run(run_id))
+
 @router.post("/schedules/{run_id}/apply")
 def apply(run_id: str):
     return schedules.apply(run_id)

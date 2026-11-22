@@ -26,6 +26,8 @@ def summary(row):
     if v5_service.is_v5(data): v5_service.display_fields(data)
     return {"schema_version":data["metadata"].get("schema_version","legacy"),"id":row["id"],"filename":row["filename"],"uploaded_at":row["created_at"],
             "sha256":row["sha256"],"jobs":len(data["jobs"]),"workstations":len(data["station_master"]),
+            "deadline_relaxation":data['metadata'].get('deadline_relaxation'),
+            "on_time_reference":data['metadata'].get('on_time_reference'),
             "origin_datetime":data["metadata"]["origin_datetime"],
             "horizon_end_datetime":data["metadata"]["horizon_end_datetime"],"validation_status":"Valid"}
 

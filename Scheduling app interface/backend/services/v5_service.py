@@ -180,8 +180,12 @@ def standardize(algorithm, raw, data):
                 "finishTime":(origin+timedelta(minutes=r["Completion_Min"])).isoformat(sep=" "),
                 "resourceUnits":resource_text,"status":"Scheduled"})
     optimal=feasible and algorithm=="CP-SAT" and raw.get("proven_optimal") is True
+    deadline_metadata = {}
+    if feasible and data['metadata'].get('deadline_relaxation'):
+        from backend.services.deadline_service import comparison
+        deadline_metadata['deadline_comparison'] = comparison(data, operations)
     return {"algorithm":algorithm,"feasible":feasible,"proven_optimal":optimal,
-        "objective":"MIN_CMAX_FINAL_2C","status":"Optimal" if optimal else "Feasible" if feasible else "Invalid result" if rows else raw.get("status_name","No feasible solution"),
+        "objective":"MIN_TARDY_LEX" if algorithm=='MIN_TARDY_GROUPED_LNS_V5' else "MIN_CMAX_FINAL_2C","status":"Optimal" if optimal else "Feasible" if feasible else "Invalid result" if rows else raw.get("status_name","No feasible solution"),
         "makespan_min":cmax if feasible else None,
         "total_tardiness_min":sum(max(0,c-jobs[j]["due_min"]) for j,c in completion.items()) if feasible else None,
         "total_flow_time_min":sum(c-jobs[j]["release_min"] for j,c in completion.items()) if feasible else None,
@@ -189,5 +193,5 @@ def standardize(algorithm, raw, data):
         "runtime_sec":raw.get("runtime_sec",raw.get("total_runtime_sec")),
         "operations":operations,"validation_issues":errors,
         **({"message":raw["message"]} if not feasible and raw.get("message") else {}),
-        "metadata":json_metadata({**{k:v for k,v in raw.items() if k!="schedule"},
+        "metadata":json_metadata({**{k:v for k,v in raw.items() if k!="schedule"}, **deadline_metadata,
             **({"working_calendar_policy":data["metadata"]["working_calendar_policy"]} if data["metadata"].get("working_calendar_policy") else {})})}

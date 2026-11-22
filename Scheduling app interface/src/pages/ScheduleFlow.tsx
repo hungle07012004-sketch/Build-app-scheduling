@@ -1,11 +1,11 @@
 import { useState, useEffect } from 'react';
 import { taskJobIds, type GanttTask, type Job } from '../data';
-import { useAppData } from '../AppData';
+import { useAppData, type Dataset } from '../AppData';
 import { api, post, ApiError, downloadJson, downloadExcel } from '../api';
 import { algorithmSettings } from '../algorithmSettings';
 import { algorithmName } from '../algorithms';
 import { PageHeading, WorkflowSteps, Panel, MetricCard, metric } from '../components/aps';
-import { Clock, Layers, Timer, AlertCircle } from 'lucide-react';
+import { Clock, Layers, Timer, CalendarClock } from 'lucide-react';
 import ApiNotice from '../components/ApiNotice';
 import SchedulingMethod, { schedulingMethodName, type MethodPreview } from '../components/SchedulingMethod';
 import StatusChip from '../components/StatusChip';
@@ -15,7 +15,7 @@ import { Search, ChevronRight, ArrowLeft, Loader2, Download, RotateCcw, Save } f
 const parameterLabel=(key:string)=>({
   ga_mutation_rate:'Mutation rate (base)',ga_crossover_rate:'Crossover rate',micro_mutation_rate:'Mutation rate (base)',micro_crossover_rate:'Crossover rate',mlpso_mr:'Mutation probability (mr)',mlpso_pcr:'Personal-best crossover (pcr)',mlpso_gcr:'Group-best crossover (gcr)',
   micro_no_improve:'Stop after epochs without improvement (0 = off)',micro_min_epochs:'Minimum epochs before early stop',micro_time_limit:'GA search budget (seconds)',
-  runs:'Independent attempts',seed_base:'Random seed (repeatability)',exact_time_limit:'CP-SAT time limit (seconds)',
+  due_group_days:'Due-date grouping window',grouped_max_decodes:'Unique full decoder calls per attempt',runs:'Independent attempts',seed_base:'Random seed (repeatability)',exact_time_limit:'CP-SAT time limit (seconds)',
   exact_workers:'CPU workers (0 = automatic)',micro_population:'Candidate schedules per generation',
   micro_generations:'Maximum search epochs',micro_max_decodes:'Maximum schedule evaluations per run',
   ga_population:'GA candidate schedules',ga_generations:'GA search generations',
@@ -90,7 +90,7 @@ function SelectJobsStep({ onNext, initial, busy, settings }: { settings:Record<s
           <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-1 gap-3">{[['Scheduling Start',start,setStart],['Scheduling End',end,setEnd]].map(([label,value,setter])=><label key={label as string} className="text-xs text-slate-600">{label as string}<input aria-label={label as string} type="datetime-local" value={value as string} onChange={e=>(setter as (v:string)=>void)(e.target.value)} className="block mt-1.5 w-full p-2 border border-slate-200 rounded-md bg-white"/></label>)}</div>
           <p className="mt-3 bg-blue-50 rounded-md p-3 text-xs text-blue-800">Horizon duration: <strong>{Number.isFinite(duration)&&duration>0?metric(duration)+' days':'Select a valid date range'}</strong></p>
         </Panel>
-        <Panel title="Scheduling Objective"><p className="text-sm font-semibold text-slate-800">Minimize Makespan (Cmax)</p><p className="text-[11px] text-slate-500 mt-2">MIN_CMAX_FINAL_2C · Fixed AL13 V5 objective. Tardiness and flow time are diagnostic metrics, not selectable objectives.</p></Panel>
+        <Panel title="Scheduling Objective"><p className="text-sm font-semibold text-slate-800">{algorithmChoice==='MIN_TARDY_GROUPED_LNS_V5'?'Minimize Tardy Jobs → Total Tardiness → Cmax':'Minimize Makespan (Cmax)'}</p><p className="text-[11px] text-slate-500 mt-2">{algorithmChoice==='MIN_TARDY_GROUPED_LNS_V5'?'Lexicographic objective under current dataset deadlines. Final 2C completion determines tardiness.':'MIN_CMAX_FINAL_2C · Legacy scheduling objective. Tardiness and flow time are diagnostic metrics.'}</p></Panel>
       </div>
       <div><SchedulingMethod jobCount={selected.size} v5={dataset?.schema_version==='AL13_BENCHMARK_V5'} value={algorithmChoice?algorithmChoice.split('|'):[]} onChange={values=>setAlgorithmChoice(values.join('|'))} disabled={busy} previewRequest={{dataset_id:dataset?.id,job_ids:[...selected],horizon_start:start,horizon_end:end,algorithms:algorithmChoice?algorithmChoice.split('|'):[],settings}}/></div>
       <Panel title="Data Validation" subtitle="Validated by the scheduling API after you continue.">
@@ -98,6 +98,7 @@ function SelectJobsStep({ onNext, initial, busy, settings }: { settings:Record<s
         <p className="text-[11px] text-slate-400 mt-4">Not checked for this selection yet. Detailed issues and search settings appear in the next step.</p>
       </Panel>
     </div>
+    {dataset?.deadline_relaxation && <p className="mt-3 rounded-lg bg-amber-50 border border-amber-200 p-3 text-sm">Đang dùng deadline đã nới cho {dataset.deadline_relaxation.changed_jobs} jobs theo lịch {dataset.deadline_relaxation.source_run_id.slice(0,12)}. {dataset.on_time_reference?'Đã bật giữ lịch tham chiếu 0 trễ; chọn đủ jobs và giữ calendar để dùng lịch này.':'Due mới được cố định khi chạy; không bảo đảm lần xếp lại có 0 jobs trễ.'} Kết quả và Excel sẽ đối chiếu cả due gốc.</p>}
     <div className="sticky bottom-0 mt-5 flex flex-wrap justify-between items-center gap-3 bg-white border border-slate-200 rounded-lg px-4 py-3 shadow-sm">
       <span className="text-xs text-slate-500">Selected: <strong className="text-slate-800">{selected.size} jobs</strong> · {schedulingMethodName(algorithmChoice?algorithmChoice.split('|'):[])}</span>
       <button disabled={selected.size===0||!start||!end||busy} onClick={()=>onNext(selected,start,end,algorithmChoice?algorithmChoice.split('|'):[])} className="aps-primary">{busy?'Validating…':'Validate Data'}<ChevronRight size={16}/></button>
@@ -109,7 +110,7 @@ function SelectJobsStep({ onNext, initial, busy, settings }: { settings:Record<s
 
 interface Issue { entity:string; field:string; message:string; }
 interface Validation { valid:boolean; issues:Issue[]; size:number; classification:string; algorithms:string[]; schema_version?:string; }
-interface AlgorithmResult { algorithm:string; feasible:boolean; proven_optimal:boolean; status:string; makespan_min:number|null; total_tardiness_min:number|null; total_flow_time_min:number|null; tardy_jobs?:number; runtime_sec:number|null; operations:GanttTask[]; message?:string; validation_issues?:Issue[]; metadata?: {status_name?:string; search_stop_reason?:string; completed_runs?:number; runs?:number; working_calendar_policy?:string; best_bound_min?:number|null; relative_gap?:number|null}; }
+interface AlgorithmResult { algorithm:string; feasible:boolean; proven_optimal:boolean; status:string; makespan_min:number|null; total_tardiness_min:number|null; total_flow_time_min:number|null; tardy_jobs?:number; runtime_sec:number|null; operations:GanttTask[]; message?:string; validation_issues?:Issue[]; metadata?: {status_name?:string; search_stop_reason?:string; completed_runs?:number; runs?:number; working_calendar_policy?:string; best_bound_min?:number|null; relative_gap?:number|null; N_pre_overdue?:number; due_group_days?:number; total_jobs?:number; tardy_percent?:number; otd_percent?:number; incumbent_fallback?:boolean; unique_full_decoder_calls?:number; on_time_reference_policy?:boolean;deadline_reference_retained?:boolean;search_produced_metrics?:{tardy_jobs?:number;makespan_min?:number};deadline_comparison?:{original_tardy_jobs:number;adjusted_tardy_jobs:number}}; }
 interface RunResult { selection_mode?:string; routing_reason?:string; request?: {dataset_id:string; horizon_start:string; horizon_end:string}; run_id:string; status:string; algorithms:AlgorithmResult[]; selected:AlgorithmResult|null; selection_reason:string; accepted_at?:string; applied_at?:string; }
 const number = (value: number|null|undefined) => value == null ? '\u2014' : value.toLocaleString(undefined,{maximumFractionDigits:2});
 
@@ -126,11 +127,12 @@ function Comparison({result}: {result:RunResult}) {
   </div>;
 }
 
-function ResultStep({result,onRunAgain,onAdjust,onDone,onUpdated,onUseLatest}: {result:RunResult;onRunAgain:()=>void;onAdjust:()=>void;onDone:()=>void;onUpdated:()=>Promise<void>;onUseLatest:()=>void}) {
+function ResultStep({result,onRunAgain,onAdjust,onDone,onUpdated,onUseLatest,onDeadlineDataset}: {result:RunResult;onRunAgain:()=>void;onAdjust:()=>void;onDone:()=>void;onUpdated:()=>Promise<void>;onUseLatest:()=>void;onDeadlineDataset:(dataset:Dataset)=>Promise<void>}) {
   const {dataset}=useAppData();
   const [tab,setTab] = useState<'gantt'|'details'|'comparison'>(result.selected?'gantt':'comparison');
   const [error,setError] = useState('');
   const [busy,setBusy] = useState(false);
+  const [deadlinePreview,setDeadlinePreview] = useState<{changed_jobs:number;total_jobs:number;reference_cmax_min:number;changes:{job_id:string;original_due_min:number;adjusted_due_min:number;extension_min:number}[]}|null>(null);
   const [showSaveModal,setShowSaveModal] = useState(false);
   const [tableJob,setTableJob] = useState('All');
   const [ganttJob,setGanttJob] = useState('');
@@ -172,6 +174,7 @@ function ResultStep({result,onRunAgain,onAdjust,onDone,onUpdated,onUseLatest}: {
         <div><h1 className="text-lg font-bold text-[#0F172A]">Scheduling Result</h1><p className="text-xs text-[#64748B] mt-0.5" title={result.run_id}>Run {result.run_id.slice(0,12)} · {algorithmName(selected?.algorithm)} · {selected?.proven_optimal?'Optimal':selected?.feasible?'Feasible · optimality not proven':result.status}</p></div>
         <div className="flex flex-wrap items-center gap-1.5">
           <button onClick={onAdjust} className="px-2 py-1.5 text-xs border border-slate-200 rounded-lg">Adjust</button>
+          {selected?.feasible && operations.some(o=>o.eventType==='2C_BATCH') && !selected.metadata?.deadline_comparison && <button disabled={busy} onClick={async()=>{setBusy(true);setError('');try{setDeadlinePreview(await api('/schedules/'+result.run_id+'/relaxed-deadlines'));}catch(e){setError((e as Error).message);}finally{setBusy(false);}}} className="px-2 py-1.5 text-xs border border-blue-300 text-blue-800 rounded-lg disabled:opacity-50">Nới deadline theo lịch này</button>}
           <button title={dataset && result.request && dataset.id!==result.request.dataset_id?'Review a new schedule using the current calendar':'Repeat the saved job selection and date range using current calendar rules'} disabled={busy} onClick={dataset && result.request && dataset.id!==result.request.dataset_id?onUseLatest:onRunAgain} className="flex items-center gap-1.5 px-2 py-1.5 text-xs border border-slate-200 rounded-lg"><RotateCcw size={14}/>{dataset && result.request && dataset.id!==result.request.dataset_id?'Schedule with latest calendar':'Run Again'}</button>
           <button disabled={busy} onClick={async()=>{setBusy(true);setError('');try{const verified=await api('/schedules/'+result.run_id+'/result?validate_export=true');downloadJson(verified,'schedule-'+result.run_id+'.json');}catch(e){setError((e as Error).message);}finally{setBusy(false);}}} className="flex items-center gap-1.5 px-2 py-1.5 text-xs border border-slate-200 rounded-lg"><Download size={14}/>JSON</button>
           <button disabled={!selected || busy} onClick={async()=>{setBusy(true);setError('');try{await downloadExcel(result.run_id);}catch(e){setError((e as Error).message);}finally{setBusy(false);}}} className="flex items-center gap-1.5 px-2 py-1.5 text-xs border border-slate-200 rounded-lg disabled:opacity-50"><Download size={14}/>Export Results to Excel</button>
@@ -179,12 +182,22 @@ function ResultStep({result,onRunAgain,onAdjust,onDone,onUpdated,onUseLatest}: {
           {result.accepted_at && <button disabled={busy || !!result.applied_at} onClick={()=>void action('apply')} className="px-3 py-1.5 text-xs bg-[#2563EB] text-white rounded-lg disabled:opacity-50">{result.applied_at?'Applied':'Apply to Production'}</button>}
         </div>
       </div>
-      <div className="grid grid-cols-2 xl:grid-cols-4 gap-3">
-        <MetricCard label="Makespan" value={metric(selected?.makespan_min)+' min'} source="Cmax · scheduling objective" icon={Clock}/>
-        <MetricCard label="Tardy Jobs" value={metric(selected?.tardy_jobs,0)} source="Diagnostic · planned completion" icon={AlertCircle} tone="green"/>
-        <MetricCard label="Total Flow Time" value={metric(selected?.total_flow_time_min)+' min'} source="Diagnostic · saved result" icon={Layers} tone="purple"/>
-        <MetricCard label="Computation Time" value={metric(selected?.runtime_sec)+' s'} source={new Set(operations.flatMap(taskJobIds)).size+' scheduled jobs'} icon={Timer} tone="amber"/>
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
+        <MetricCard label="Makespan" value={metric(selected?.makespan_min)+' min'} icon={Clock}/>
+        <MetricCard label="Tardy Jobs" value={selected?.tardy_jobs==null?'—':number(selected.tardy_jobs)+' jobs'} icon={CalendarClock} tone={selected?.tardy_jobs===0?'green':'amber'}/>
+        <MetricCard label="Total Flow Time" value={metric(selected?.total_flow_time_min)+' min'} icon={Layers} tone="purple"/>
+        <MetricCard label="Computation Time" value={metric(selected?.runtime_sec)+' s'} icon={Timer} tone="amber"/>
       </div>
+      {selected?.algorithm==='MIN_TARDY_GROUPED_LNS_V5' && <div data-testid="grouped-lns-metrics" className="mt-2 rounded-lg border border-blue-200 bg-blue-50 p-3 text-xs text-blue-900">
+        <strong>Min Tardy · current dataset deadlines</strong>
+        <div className="mt-1 flex flex-wrap gap-x-5 gap-y-1">
+          <span>Jobs: {selected.metadata?.total_jobs}</span><span>Tardy jobs: {selected.tardy_jobs} ({number(selected.metadata?.tardy_percent)}%)</span>
+          <span>OTD: {number(selected.metadata?.otd_percent)}%</span><span>Total Tardiness: {number(selected.total_tardiness_min)} min</span>
+          <span>Overdue before PRE: {selected.metadata?.N_pre_overdue}</span><span>Grouping: {selected.metadata?.due_group_days===0?'Off':selected.metadata?.due_group_days+' calendar days'}</span>
+          <span>Unique decodes: {selected.metadata?.unique_full_decoder_calls}</span>
+        </div>
+        {selected.metadata?.incumbent_fallback && <p className="mt-1">Showing a previously validated exact-input incumbent; this search did not improve it.</p>}
+      </div>}
       <details data-testid="result-details" className="mt-2 text-xs text-slate-600">
         <summary className="cursor-pointer w-fit">Show Details{dataset && result.request && dataset.id!==result.request.dataset_id && <span className="ml-2 text-amber-700">Calendar notice</span>}</summary>
         <div className="mt-2">
@@ -204,6 +217,16 @@ function ResultStep({result,onRunAgain,onAdjust,onDone,onUpdated,onUseLatest}: {
       </details>
     </div>
     <ApiNotice error={error}/>
+    {deadlinePreview && <div className="shrink-0 max-h-[45vh] overflow-auto m-3 p-4 rounded-lg border border-blue-200 bg-blue-50 text-sm" data-testid="deadline-preview">
+      <strong>Nới deadline của {deadlinePreview.changed_jobs}/{deadlinePreview.total_jobs} jobs tới completion final 2C</strong>
+      <p className="mt-2">Job đúng hạn giữ due cũ. Lịch này sẽ có 0 jobs trễ theo due mới, Cmax vẫn {number(deadlinePreview.reference_cmax_min)} phút. Khi xếp lại có thể phát sinh jobs trễ. App tạo bộ dữ liệu mới, giữ nguyên dữ liệu và lịch gốc.</p>
+      <details className="mt-2"><summary>Xem thay đổi từng job (phút từ origin)</summary><table className="w-full mt-2"><thead><tr><th>Job</th><th>Due gốc</th><th>Due mới</th><th>Nới thêm</th></tr></thead><tbody>{deadlinePreview.changes.map(r=><tr key={r.job_id}><td>{r.job_id}</td><td>{number(r.original_due_min)}</td><td>{number(r.adjusted_due_min)}</td><td>{number(r.extension_min)}</td></tr>)}</tbody></table></details>
+      <div className="flex gap-3 mt-3"><button disabled={busy} className="aps-primary" onClick={async()=>{setBusy(true);setError('');try{const created=await post('/schedules/'+result.run_id+'/relaxed-deadlines');await onDeadlineDataset(created.dataset);}catch(e){setError((e as Error).message);}finally{setBusy(false);}}}>{busy?'Đang tạo…':'Tạo dữ liệu deadline mới & chọn lịch chạy'}</button><button disabled={busy} onClick={()=>setDeadlinePreview(null)}>Đóng</button></div>
+    </div>}
+    {selected?.metadata?.deadline_comparison && <div data-testid="deadline-comparison" className="shrink-0 m-3 p-3 border border-amber-200 rounded-lg bg-amber-50 text-sm">
+      <strong>Deadline đã nới và cố định từ lịch tham chiếu</strong><p>Jobs trễ theo due gốc: {selected.metadata.deadline_comparison.original_tardy_jobs} · Theo due mới: {selected.metadata.deadline_comparison.adjusted_tardy_jobs}. Xem từng job trong Excel “Deadline Comparison”.</p>
+      {selected.metadata.on_time_reference_policy && <p className="mt-1">{selected.metadata.deadline_reference_retained?'Đang giữ lịch tham chiếu đã kiểm định 0 trễ; lần tìm kiếm này chưa tạo lịch tốt hơn.':'Lịch do lần tìm kiếm này tạo ra đáp ứng chính sách 0 trễ và không làm Cmax xấu hơn lịch tham chiếu.'} Jobs trễ của nghiệm search: {selected.metadata.search_produced_metrics?.tardy_jobs ?? 'Không có nghiệm hợp lệ'}.</p>}
+    </div>}
     <div className="flex shrink-0 flex-wrap items-center gap-1 px-4 pt-1 bg-white border-b border-slate-200">
       {(['gantt','details','comparison'] as const).map(t=><button key={t} onClick={()=>setTab(t)} className={'px-4 py-2.5 text-sm font-medium border-b-2 -mb-px '+(tab===t?'border-[#2563EB] text-[#2563EB]':'border-transparent text-[#64748B]')}>{t==='gantt'?'Gantt View':t==='details'?'Schedule Table':'Algorithm Comparison'}</button>)}
     </div>
@@ -279,7 +302,12 @@ export default function ScheduleFlow({onDone}: {onDone:()=>void}) {
     setRequest({...request,dataset_id:dataset.id,horizon_start:dataset.origin_datetime.replace(' ','T').slice(0,16),horizon_end:dataset.horizon_end_datetime.replace(' ','T').slice(0,16)});
     adjust();
   }
-  if(result) return <><ApiNotice error={error}/><ResultStep result={result} onRunAgain={()=>void run(true)} onAdjust={adjust} onUseLatest={useLatestCalendar} onDone={onDone} onUpdated={loadResult}/></>;
+  async function useDeadlineDataset(created:Dataset) {
+    await refresh();
+    setRequest({...request,dataset_id:created.id,job_ids:result?.selected?.operations?Array.from(new Set(result.selected.operations.flatMap(taskJobIds))):request?.job_ids});
+    setPreview(null);setStatus(null);adjust();
+  }
+  if(result) return <><ApiNotice error={error}/><ResultStep result={result} onRunAgain={()=>void run(true)} onAdjust={adjust} onUseLatest={useLatestCalendar} onDeadlineDataset={useDeadlineDataset} onDone={onDone} onUpdated={loadResult}/></>;
   if(runId) return <div className="flex-1 flex flex-col items-center justify-center bg-[#F8FAFC]"><ApiNotice error={error}/>
     <div className="bg-white rounded-2xl border border-slate-200 shadow-sm w-full max-w-lg p-8">
       <Loader2 size={28} className="text-[#2563EB] animate-spin mx-auto mb-4"/><h2 className="text-lg font-bold text-center">Optimizing Production Schedule</h2>
@@ -305,7 +333,8 @@ export default function ScheduleFlow({onDone}: {onDone:()=>void}) {
       </section>}
       {validation.schema_version==='AL13_BENCHMARK_V5' && activeAlgorithms.includes('MLPSO') && <p className="text-xs text-slate-500">MLPSO V3 uses iteration and evaluation limits per attempt, with no wall-clock cap. Configure these in Advanced settings.</p>}
       <details><summary className="text-sm text-[#64748B] cursor-pointer">Advanced settings</summary><div className="grid grid-cols-2 gap-3 mt-3">
-        {activeFields.map(([key,value])=><label className="text-xs text-[#64748B]" key={key}>{parameterLabel(String(key))}<input aria-label={String(key)} type="number" step="any" className="w-full border border-slate-200 rounded-lg p-2" value={settings[String(key)]??value} onChange={e=>setSettings({...settings,[String(key)]:Number(e.target.value)})}/></label>)}
+        {activeFields.map(([key,value])=><label className="text-xs text-[#64748B]" key={key}>{parameterLabel(String(key))}{key==='due_group_days'?<select aria-label="due_group_days" className="w-full border border-slate-200 rounded-lg p-2" value={settings[key]??value} onChange={e=>setSettings({...settings,[key]:Number(e.target.value)})}>{[0,1,3,7].map(d=><option key={d} value={d}>{d===0?'Off (LNS only)':d+' calendar days'}</option>)}</select>:<input aria-label={String(key)} type="number" step="any" className="w-full border border-slate-200 rounded-lg p-2" value={settings[String(key)]??value} onChange={e=>setSettings({...settings,[String(key)]:Number(e.target.value)})}/>}</label>)}
+        {activeAlgorithms.includes('MIN_TARDY_GROUPED_LNS_V5')&&<label className="text-xs text-slate-600"><input type="checkbox" checked={settings.grouped_use_incumbent??false} onChange={e=>setSettings({...settings,grouped_use_incumbent:e.target.checked})}/> Reuse the best independently validated incumbent for this exact input</label>}
       </div></details>
       <button aria-label="Run Optimization" disabled={!validation.valid || busy || !previewCurrent?.valid || !activeAlgorithms.length} onClick={()=>void run()} className="px-5 py-2.5 bg-[#2563EB] text-white rounded-lg text-sm font-semibold disabled:opacity-50">{busy?'Starting...':activeAlgorithms.length?'Run '+activeAlgorithms.map(algorithmName).join(' + '):'Checking selection...'}</button>
     </div></div></div>;

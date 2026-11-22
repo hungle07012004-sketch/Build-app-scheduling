@@ -2,7 +2,7 @@ import { createContext, useContext, useCallback, useEffect, useState, type React
 import { api } from './api';
 import type { Job, WorkstationData } from './data';
 
-export interface Dataset { schema_version?:string; id:string; filename:string; uploaded_at:string; jobs:number; workstations:number; origin_datetime:string; horizon_end_datetime:string; validation_status:string; }
+export interface Dataset { on_time_reference?:{id:string;policy:string;makespan_min:number}; deadline_relaxation?:{source_run_id:string;changed_jobs:number;reference_cmax_min:number}; schema_version?:string; id:string; filename:string; uploaded_at:string; jobs:number; workstations:number; origin_datetime:string; horizon_end_datetime:string; validation_status:string; }
 interface DataState {
   jobs: Job[]; workstations: WorkstationData[]; overview: any; dataset: Dataset | null;
   error: string; loading: boolean; refresh: () => Promise<void>;

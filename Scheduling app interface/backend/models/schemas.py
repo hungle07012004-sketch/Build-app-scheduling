@@ -32,6 +32,9 @@ class SolverSettings(BaseModel):
     mlpso_gcr: float = Field(0.40, ge=0, le=1)
     target_cmax: float | None = Field(None, gt=0)
     target_polish_generations: int = Field(500, ge=1, le=5000)
+    due_group_days: Literal[0,1,3,7] = 3
+    grouped_max_decodes: int = Field(12000, ge=32, le=100000)
+    grouped_use_incumbent: bool = False
 
 class ScheduleRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -39,7 +42,7 @@ class ScheduleRequest(BaseModel):
     job_ids: list[str] = Field(min_length=1)
     horizon_start: str
     horizon_end: str
-    algorithms: list[Literal["CP-SAT","SS Micro-GA Fast","MILP","Improved GA","MLPSO"]] = Field(default_factory=list, max_length=3)
+    algorithms: list[Literal["CP-SAT","SS Micro-GA Fast","MILP","Improved GA","MLPSO","MIN_TARDY_GROUPED_LNS_V5"]] = Field(default_factory=list, max_length=4)
     settings: SolverSettings = Field(default_factory=SolverSettings)
 
 class ExecutionUpdate(BaseModel):

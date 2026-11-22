@@ -11,7 +11,7 @@ interface Props {
   previewRequest?:Record<string,unknown>;
   onPreview?:(preview:MethodPreview,key:string)=>void;
 }
-export const schedulingMethodName=(values:string[]=[])=>!values.length?'Automatic':values.length>1?'Saved comparison':values[0]==='CP-SAT'?'CP-SAT':values[0]==='MLPSO'?'MLPSO':values[0]==='MILP'?'MILP (legacy)':'GA';
+export const schedulingMethodName=(values:string[]=[])=>!values.length?'Automatic':values.length>1?'Saved comparison':values[0]==='MIN_TARDY_GROUPED_LNS_V5'?'Min Tardy — Due-Date Grouping + LNS':values[0]==='CP-SAT'?'CP-SAT':values[0]==='MLPSO'?'MLPSO':values[0]==='MILP'?'MILP (legacy)':'GA';
 
 export default function SchedulingMethod({jobCount,v5,value,onChange,disabled=false,previewRequest,onPreview}:Props) {
   const requestKey=JSON.stringify(previewRequest);
@@ -31,6 +31,7 @@ export default function SchedulingMethod({jobCount,v5,value,onChange,disabled=fa
   const active=schedulingMethodName(value);
   const choices=[
     {name:'Automatic',subtitle:'Recommended',description:'Uses the selected jobs, operations, resources and search budget to choose an available method.',technical:'CP-SAT, GA or MLPSO, according to dataset compatibility',algorithms:[],compatible:true},
+    {name:'Min Tardy — Due-Date Grouping + LNS',subtitle:'Opt-in · Current dataset deadlines',description:'Reduces late jobs first, then total tardiness and makespan. Soft due-date groups guide feasibility-aware search; delivery dates and production rules stay unchanged.',technical:'MIN_TARDY_GROUPED_LNS_V5 · 6–255 jobs',algorithms:['MIN_TARDY_GROUPED_LNS_V5'],compatible:v5&&jobCount>=6&&jobCount<=255},
     {name:'CP-SAT',subtitle:'Exact Constraint Solver',description:'Searches systematically for a feasible schedule and, when possible, proves optimality. Complex instances may need more time.',technical:'CP-SAT (OR-Tools)',algorithms:['CP-SAT'],compatible:v5},
     {name:'GA',subtitle:'Genetic Algorithm',description:'Improves candidate schedules through genetic search. Suitable when you want a good schedule within the available search budget.',technical:v5?'SS Micro-GA Fast':'Improved GA + IG',algorithms:[v5?'SS Micro-GA Fast':'Improved GA'],compatible:true},
     {name:'MLPSO',subtitle:'Multi-Level Particle Swarm Optimization',description:'Searches using cooperating particle groups to improve production schedules.',technical:v5?'MLPSO V3 · shared V5 decoder · iteration/evaluation limits':'Existing MLPSO implementation (legacy data)',algorithms:['MLPSO'],compatible:true},
@@ -42,7 +43,13 @@ export default function SchedulingMethod({jobCount,v5,value,onChange,disabled=fa
       {choices.map(choice=>{
         const availability=preview?.availability[choice.algorithms[0]];
         const unavailable=!choice.compatible||availability?.available===false;
-        const reason=availability?.reason||(choice.name==='MLPSO'?'No V5-compatible MLPSO implementation is connected.':'CP-SAT requires compatible V5 data.');
+        const localReason=choice.algorithms[0]==='MIN_TARDY_GROUPED_LNS_V5'
+          ? !v5?'Min Tardy requires compatible V5 data.'
+            : jobCount<6?'Select at least 6 jobs to enable Min Tardy (6–255 jobs).'
+              : 'Min Tardy supports at most 255 selected jobs.'
+          : choice.name==='CP-SAT'?'CP-SAT requires compatible V5 data.'
+            : `${choice.name} is unavailable for this selection.`;
+        const reason=!choice.compatible?localReason:availability?.reason||localReason;
         return <label key={choice.name} className={'flex items-start gap-3 rounded-lg border p-3 transition-colors '+(active===choice.name?'border-blue-400 bg-[#EFF6FF]':'border-slate-200 bg-white')+(disabled||unavailable?' cursor-not-allowed':' cursor-pointer hover:border-blue-300')}>
           <input type="radio" name="scheduling-method" aria-label={choice.name} checked={active===choice.name} disabled={disabled||unavailable} onChange={()=>onChange(choice.algorithms)} className="mt-1 accent-[#2563EB]"/>
           <div className="min-w-0 flex-1">

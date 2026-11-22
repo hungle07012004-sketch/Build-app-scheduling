@@ -22,10 +22,17 @@ def prepare(request, preflight=True):
     except (ValueError,KeyError,TypeError) as exc:
         raise AppError("INVALID_INPUT","Selection or horizon is invalid.",str(exc)) from exc
     errors = validate_instance(instance,preflight=True) if preflight else []
+    if preflight and not errors and instance.get('metadata',{}).get('on_time_reference'):
+        from backend.services.deadline_service import load_on_time_reference
+        try:
+            load_on_time_reference(instance, DATA_DIR)
+        except (OSError, ValueError, KeyError) as exc:
+            raise AppError('ON_TIME_REFERENCE_INVALID',
+                'The on-time reference does not match this selection/calendar. Keep the full reference job set and original calendar.',str(exc),409) from exc
     routing = route(len(request.job_ids),instance,request.settings.model_dump())
     if request.algorithms:
         from backend.services.v5_service import is_v5
-        supported={"CP-SAT","SS Micro-GA Fast","MLPSO"} if is_v5(instance) else {"MILP","Improved GA","MLPSO"}
+        supported={"CP-SAT","SS Micro-GA Fast","MLPSO","MIN_TARDY_GROUPED_LNS_V5"} if is_v5(instance) else {"MILP","Improved GA","MLPSO"}
         if len(request.algorithms)!=len(set(request.algorithms)) or not set(request.algorithms)<=supported:
             raise AppError("UNSUPPORTED_ALGORITHM","Choose algorithms compatible with this dataset.")
         unavailable = [a for a in request.algorithms if a in routing["availability"] and not routing["availability"][a]["available"]]
@@ -42,6 +49,11 @@ def prepare(request, preflight=True):
 
 def start(request):
     instance,errors,routing = prepare(request)
+    if 'MIN_TARDY_GROUPED_LNS_V5' in routing['algorithms']:
+        import math
+        n=len(instance['jobs'])
+        if not 6<=n<=255 or (n<=8 and request.settings.grouped_max_decodes>math.factorial(n)):
+            raise AppError('INVALID_INPUT','Grouped LNS requires 6..255 jobs and a budget no larger than the number of unique permutations.')
     from backend.services.v5_service import is_v5
     if is_v5(instance) and "MLPSO" in routing["algorithms"]:
         from backend.solver_v5.solve_mlpso_v3_instance import _effective_population_size
@@ -85,14 +97,24 @@ def worker(algorithm,path,digest,settings):
             from backend.services.algorithms.v5_adapter import solve_exact as solve
         elif algorithm=="SS Micro-GA Fast":
             from backend.services.algorithms.v5_adapter import solve_micro as solve
+        elif algorithm=="MIN_TARDY_GROUPED_LNS_V5":
+            from backend.services.algorithms.grouped_lns_adapter import solve
         else:
             raise ValueError("Unsupported algorithm: "+algorithm)
         from contextlib import redirect_stdout
+        instance = json.loads(Path(path).read_text(encoding="utf-8"))
+        from backend.services.deadline_service import load_on_time_reference, keep_on_time_result
+        reference = load_on_time_reference(instance, Path(path).parents[2])
         from backend.services.progress_service import log_path
         with log_path(path,algorithm).open("w",encoding="utf-8") as log, redirect_stdout(log):
             raw = solve(path,settings)
         instance = json.loads(Path(path).read_text(encoding="utf-8"))
+        if algorithm=='MIN_TARDY_GROUPED_LNS_V5':
+            from backend.services.algorithms.grouped_lns_adapter import object_hash
+            if raw.get('original_input_sha256')!=digest or raw.get('settings_sha256')!=object_hash(settings):
+                raise ValueError('Optimizer output input/settings identity mismatch')
         result = standardize(algorithm,raw,instance)
+        result = keep_on_time_result(algorithm,result,instance,reference)
         result.update(instance_sha256=digest,started_at=started_at,finished_at=now(),wall_runtime_sec=time.perf_counter()-started)
         # Keep validated results even if the parent process fails to persist them.
         checkpoint=log_path(path,algorithm).with_suffix('.result.json')

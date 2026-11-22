@@ -5,9 +5,9 @@ export function PageHeading({ title, description, actions }: { title: string; de
   return <header className="aps-heading"><div><h1>{title}</h1><p>{description}</p></div>{actions && <div className="flex flex-wrap gap-2 items-center">{actions}</div>}</header>;
 }
 export function MetricCard({ label, value, source, icon: Icon, tone = 'blue' }: {
-  label: string; value: ReactNode; source: ReactNode; icon: ComponentType<{ size?: number }>; tone?: string;
+  label: string; value: ReactNode; source?: ReactNode; icon: ComponentType<{ size?: number }>; tone?: string;
 }) {
-  return <article className={'aps-metric aps-tone-' + tone}><span className="aps-metric-icon"><Icon size={22}/></span><div className="min-w-0"><h2>{label}</h2><div className="aps-metric-value">{value}</div><p>{source}</p></div></article>;
+  return <article className={'aps-metric aps-tone-' + tone}><span className="aps-metric-icon"><Icon size={22}/></span><div className="min-w-0"><h2>{label}</h2><div className="aps-metric-value">{value}</div>{source!=null&&<p>{source}</p>}</div></article>;
 }
 export function Panel({ title, subtitle, action, children, className = '' }: { title: string; subtitle?: string; action?: ReactNode; children: ReactNode; className?: string }) {
   return <section className={'aps-panel ' + className}><header className="aps-panel-heading"><div><h2>{title}</h2>{subtitle && <p>{subtitle}</p>}</div>{action}</header><div className="p-4 lg:p-5">{children}</div></section>;

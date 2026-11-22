@@ -21,7 +21,16 @@ def availability(v5):
     cp = v5 and exists("backend/solver_v5", "solve_milp_instance.py") and importlib.util.find_spec("ortools") is not None
     ga = exists("backend/solver_v5" if v5 else "code", "solve_ss_micro_ga_fast_instance.py" if v5 else "solve_improved_ga_ig_v3_earlystop_instance.py")
     mlpso = exists("backend/solver_v5" if v5 else "code", "solve_mlpso_v3_instance.py" if v5 else "solve_mlpso_instance.py")
+    grouped_sources = (
+        'due_group_guided_lns_v5/guidance.py',
+        'min_tardy_lns_improvement_v5/feasibility_aware_repair.py',
+        'min_tardy_enhanced_v5/search.py', 'min_tardy_jobs_v5/objectives.py',
+        'due_date_hybrid_search/hybrid_search.py', 'cmax_due_date_tradeoff/run_experiment.py',
+        'due_date_grouping_ga_v5/due_date_grouping.py', 'tardiness_root_cause_92/helpers.py',
+    )
+    grouped = v5 and exists('backend/services/algorithms','grouped_lns_adapter.py') and all(exists('experiments',f) for f in grouped_sources)
     return {
+        "MIN_TARDY_GROUPED_LNS_V5": {"available": bool(grouped), "reason": "" if grouped else "Requires V5 data and the packaged grouped LNS search modules."},
         "CP-SAT": {"available": bool(cp), "reason": "" if cp else "CP-SAT is available only with compatible V5 data and OR-Tools installed."},
         "SS Micro-GA Fast" if v5 else "Improved GA": {"available": ga, "reason": "" if ga else "The GA implementation is missing."},
         "MLPSO": {"available": mlpso, "reason": "" if mlpso else "No V5-compatible MLPSO implementation is connected." if v5 else "The MLPSO implementation is missing."},
